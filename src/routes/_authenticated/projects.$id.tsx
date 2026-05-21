@@ -450,5 +450,3 @@ function renderMd(src: string): string {
       .replace(/\*([^*]+)\*/g, "<em>$1</em>");
   }
 }
-
-useEffect; // keep import for future
