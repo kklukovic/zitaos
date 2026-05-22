@@ -94,16 +94,26 @@ const projectIdInput = z.object({ projectId: z.string().uuid() });
 // ============= 1. Generate Ideas =============
 export const generateIdeas = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => projectIdInput.parse(d))
+  .inputValidator((d) => z.object({
+    projectId: z.string().uuid(),
+    researchNotes: z.string().max(20000).optional().default(""),
+  }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: project, error } = await context.supabase
       .from("projects").select("profile_data, manual_research").eq("id", data.projectId).single();
     if (error || !project?.profile_data) throw new Error("Profile must be saved first");
 
+    // Prefer freshly-passed notes; fall back to whatever is saved on the project
+    const manual = data.researchNotes.trim() || project.manual_research?.trim() || "";
+    if (data.researchNotes.trim()) {
+      await context.supabase.from("projects")
+        .update({ manual_research: data.researchNotes })
+        .eq("id", data.projectId);
+    }
+
     await chargeCredits(context, data.projectId, "discover");
 
     const profile = project.profile_data as Record<string, string>;
-    const manual = project.manual_research?.trim();
     const system = `You are an expert app idea researcher and micro-SaaS strategist for solopreneurs.
 Rules:
 - Each idea must be buildable by a solo builder in 1-7 days
