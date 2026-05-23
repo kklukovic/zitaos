@@ -75,7 +75,7 @@ function ProjectWorkspace() {
         {active === "discover" && <DiscoverPanel project={project} onSaved={(next) => { refresh(); setActive(next); }} />}
         {active === "score" && <ScorePanel project={project} onSaved={(next) => { refresh(); setActive(next); }} />}
         {active === "blueprint" && <BlueprintPanel project={project} onSaved={(next) => { refresh(); setActive(next); }} />}
-        {active === "launch" && <Placeholder step={STEPS[4]} />}
+        {active === "launch" && <LaunchPanel project={project} onSaved={(next) => { refresh(); setActive(next); }} />}
       </div>
     </div>
   );
@@ -870,9 +870,11 @@ function MarkdownView({ md }: { md: string }) {
       );
       i++;
     } else if (line.startsWith("## ")) {
+      const headText = line.slice(3);
+      const headId = headText.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       nodes.push(
-        <h2 key={i} className="mb-2 mt-7 border-b border-border pb-1.5 text-base font-semibold text-foreground first:mt-0">
-          {parseLine(line.slice(3))}
+        <h2 key={i} id={headId} className="mb-2 mt-7 scroll-mt-4 border-b border-border pb-1.5 text-base font-semibold text-foreground first:mt-0">
+          {parseLine(headText)}
         </h2>,
       );
       i++;
@@ -935,6 +937,200 @@ function MarkdownView({ md }: { md: string }) {
   }
 
   return <div>{nodes}</div>;
+}
+
+// ---------- Step 5: Launch ----------
+function slugify(text: string) {
+  return text.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function LaunchToc({ md }: { md: string }) {
+  const sections = md
+    .split("\n")
+    .filter((l) => l.startsWith("## "))
+    .map((l) => {
+      const text = l.slice(3).trim();
+      return { text, id: slugify(text) };
+    });
+  if (!sections.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-border bg-muted/30 px-3 py-2">
+      <span className="shrink-0 text-xs uppercase tracking-wider text-muted-foreground">Jump to:</span>
+      {sections.map((s) => (
+        <a key={s.id} href={`#${s.id}`} className="text-xs text-primary underline-offset-2 hover:underline">
+          {s.text}
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function LaunchPanel({ project, onSaved }: { project: any; onSaved: (next: Status) => void }) {
+  const existingMd = (project.launch_kit_markdown as string | null) ?? null;
+  const autoRun = !existingMd;
+  const didAutoRun = useRef(false);
+
+  const [md, setMd] = useState<string | null>(existingMd);
+  const [running, setRunning] = useState(autoRun);
+  const [launchError, setLaunchError] = useState<string | null>(null);
+  const [completing, setCompleting] = useState(false);
+
+  const run = async () => {
+    setRunning(true);
+    setLaunchError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-launch", {
+        body: { projectId: project.id },
+      });
+      if (error) {
+        let msg = error.message ?? "Launch kit generation failed — try again.";
+        try {
+          const body = await (error as any).context?.json?.();
+          if (body?.error) msg = body.error;
+        } catch {}
+        throw new Error(msg);
+      }
+      if (data?.error) throw new Error(data.error);
+      if (typeof data?.markdown !== "string") throw new Error("Unexpected response from generate-launch — try again.");
+      setMd(data.markdown);
+      toast.success("Launch kit generated!");
+    } catch (err: any) {
+      const msg = err?.message ?? "Launch kit generation failed — try again.";
+      console.error("generate-launch error:", err);
+      setLaunchError(msg);
+      toast.error(msg);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  useEffect(() => {
+    if (autoRun && !didAutoRun.current) {
+      didAutoRun.current = true;
+      run();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const copyAll = () =>
+    navigator.clipboard.writeText(md ?? "").then(() => toast.success("Launch kit copied!"));
+
+  const download = () => {
+    const ideaName = (project.chosen_idea as any)?.name ?? project.id;
+    const safeName = ideaName.replace(/[^a-z0-9]/gi, "-").toLowerCase();
+    const blob = new Blob([md ?? ""], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `launch-kit-${safeName}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const complete = async () => {
+    setCompleting(true);
+    const { error } = await supabase
+      .from("projects")
+      .update({ status: "completed", updated_at: new Date().toISOString() })
+      .eq("id", project.id);
+    setCompleting(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Project marked as completed — congratulations!");
+    onSaved("launch");
+  };
+
+  const isCompleted = project.status === "completed";
+  const ideaName = (project.chosen_idea as any)?.name ?? "your idea";
+
+  return (
+    <div className="space-y-5 rounded-xl border border-border bg-card p-6 shadow-card">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Step 5 — Launch Kit</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your full launch plan for <span className="font-medium text-foreground">{ideaName}</span>.
+          </p>
+        </div>
+        {md && !running && (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={copyAll}>
+              <Copy className="h-3.5 w-3.5" />
+              Copy All
+            </Button>
+            <Button variant="outline" size="sm" onClick={download}>
+              <Download className="h-3.5 w-3.5" />
+              Download .md
+            </Button>
+            <Button variant="outline" size="sm" onClick={run} disabled={running}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Regenerate (8 credits)
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Loading state */}
+      {running && (
+        <div className="space-y-5">
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Generating launch kit — this can take 15–30 s…</p>
+          </div>
+          {Array.from({ length: 9 }).map((_, i) => (
+            <div key={i} className="animate-pulse space-y-2">
+              <div className={cn("h-5 rounded bg-muted", i % 3 === 0 ? "w-1/3" : i % 3 === 1 ? "w-1/2" : "w-2/5")} />
+              <div className="h-3 w-full rounded bg-muted" />
+              <div className="h-3 w-4/5 rounded bg-muted" />
+              {i % 2 === 0 && <div className="h-3 w-2/3 rounded bg-muted" />}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Error state */}
+      {launchError && !running && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+          <p className="text-sm font-medium text-destructive">Launch kit generation failed</p>
+          <p className="mt-1 text-sm text-muted-foreground">{launchError}</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={run}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {/* Launch kit content */}
+      {md && !running && (
+        <div className="space-y-4">
+          <LaunchToc md={md} />
+          <div className="rounded-lg border border-border bg-background p-6">
+            <MarkdownView md={md} />
+          </div>
+          <div className="flex items-center gap-3 border-t border-border pt-4">
+            {isCompleted ? (
+              <div className="flex items-center gap-2 rounded-full border border-success/30 bg-success/10 px-4 py-2 text-sm font-medium text-success">
+                <Check className="h-4 w-4" />
+                Project completed — congratulations!
+              </div>
+            ) : (
+              <Button
+                onClick={complete}
+                disabled={completing}
+                className="bg-gradient-electric text-primary-foreground shadow-glow"
+              >
+                {completing
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <Check className="h-4 w-4" />}
+                Mark Project as Completed
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---------- Placeholder for steps 2-5 ----------
