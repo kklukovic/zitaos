@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   Target, Sparkles, Zap, FileCode, Rocket, Check, Lock, ArrowRight, Loader2,
-  RefreshCw, ChevronDown,
+  RefreshCw, ChevronDown, Copy, Download,
 } from "lucide-react";
 import { type Idea, type ScoredIdea } from "@/lib/zita.functions";
 import { cn } from "@/lib/utils";
@@ -74,7 +74,7 @@ function ProjectWorkspace() {
         {active === "profile" && <ProfilePanel project={project} onSaved={(next) => { refresh(); setActive(next); }} />}
         {active === "discover" && <DiscoverPanel project={project} onSaved={(next) => { refresh(); setActive(next); }} />}
         {active === "score" && <ScorePanel project={project} onSaved={(next) => { refresh(); setActive(next); }} />}
-        {active === "blueprint" && <Placeholder step={STEPS[3]} />}
+        {active === "blueprint" && <BlueprintPanel project={project} onSaved={(next) => { refresh(); setActive(next); }} />}
         {active === "launch" && <Placeholder step={STEPS[4]} />}
       </div>
     </div>
@@ -464,19 +464,36 @@ function ScorePanel({ project, onSaved }: { project: any; onSaved: (next: Status
   const [scored, setScored] = useState<ScoredIdea[] | null>(existingScored);
   const [chosen, setChosen] = useState<string | null>(existingChosen);
   const [running, setRunning] = useState(autoRun);
+  const [scoreError, setScoreError] = useState<string | null>(null);
 
   const run = async () => {
     setRunning(true);
+    setScoreError(null);
     try {
       const { data, error } = await supabase.functions.invoke("score-ideas", {
         body: { projectId: project.id },
       });
-      if (error) throw new Error(error.message);
+
+      // supabase-js wraps non-2xx responses in a FunctionsHttpError whose
+      // .message is a generic string. Pull the actual message from the body.
+      if (error) {
+        let msg = error.message ?? "Scoring failed — try again.";
+        try {
+          const body = await (error as any).context?.json?.();
+          if (body?.error) msg = body.error;
+        } catch {}
+        throw new Error(msg);
+      }
       if (data?.error) throw new Error(data.error);
+      if (!Array.isArray(data?.scored)) throw new Error("Unexpected response from score-ideas — try again.");
+
       setScored(data.scored);
       toast.success("Ideas scored!");
     } catch (err: any) {
-      toast.error(err?.message ?? "Scoring failed — try again.");
+      const msg = err?.message ?? "Scoring failed — try again.";
+      console.error("score-ideas error:", err);
+      setScoreError(msg);
+      toast.error(msg);
     } finally {
       setRunning(false);
     }
@@ -544,6 +561,18 @@ function ScorePanel({ project, onSaved }: { project: any; onSaved: (next: Status
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Error state with Retry */}
+      {scoreError && !running && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+          <p className="text-sm font-medium text-destructive">Scoring failed</p>
+          <p className="mt-1 text-sm text-muted-foreground">{scoreError}</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={run}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
+          </Button>
         </div>
       )}
 
@@ -648,6 +677,264 @@ function ScoreCell({ v }: { v: number }) {
   return (
     <td className={cn("px-3 py-3 text-center font-medium tabular-nums", color)}>{v}</td>
   );
+}
+
+// ---------- Step 4: Blueprint ----------
+function extractBuildPrompt(md: string): string {
+  const marker = "## Lovable Build Prompt";
+  const idx = md.indexOf(marker);
+  if (idx === -1) return md;
+  const after = md.slice(idx + marker.length).trim();
+  // Strip fences if the prompt is inside a code block
+  const fenced = after.match(/^```[\w]*\n?([\s\S]*?)```/);
+  return fenced ? fenced[1].trim() : after;
+}
+
+function BlueprintPanel({ project, onSaved }: { project: any; onSaved: (next: Status) => void }) {
+  const existingMd = (project.blueprint_markdown as string | null) ?? null;
+  const autoRun = !existingMd;
+  const didAutoRun = useRef(false);
+
+  const [md, setMd] = useState<string | null>(existingMd);
+  const [running, setRunning] = useState(autoRun);
+  const [blueprintError, setBlueprintError] = useState<string | null>(null);
+
+  const run = async () => {
+    setRunning(true);
+    setBlueprintError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-blueprint", {
+        body: { projectId: project.id },
+      });
+      if (error) {
+        let msg = error.message ?? "Blueprint generation failed — try again.";
+        try {
+          const body = await (error as any).context?.json?.();
+          if (body?.error) msg = body.error;
+        } catch {}
+        throw new Error(msg);
+      }
+      if (data?.error) throw new Error(data.error);
+      if (typeof data?.markdown !== "string") throw new Error("Unexpected response from generate-blueprint — try again.");
+      setMd(data.markdown);
+      toast.success("Blueprint generated!");
+    } catch (err: any) {
+      const msg = err?.message ?? "Blueprint generation failed — try again.";
+      console.error("generate-blueprint error:", err);
+      setBlueprintError(msg);
+      toast.error(msg);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  useEffect(() => {
+    if (autoRun && !didAutoRun.current) {
+      didAutoRun.current = true;
+      run();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const copyAll = () =>
+    navigator.clipboard.writeText(md ?? "").then(() => toast.success("Blueprint copied!"));
+
+  const copyBuildPrompt = () =>
+    navigator.clipboard.writeText(extractBuildPrompt(md ?? "")).then(() => toast.success("Build prompt copied!"));
+
+  const download = () => {
+    const ideaName = (project.chosen_idea as any)?.name ?? project.id;
+    const safeName = ideaName.replace(/[^a-z0-9]/gi, "-").toLowerCase();
+    const blob = new Blob([md ?? ""], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `blueprint-${safeName}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const goToLaunch = async () => {
+    const below = ["profile", "discover", "score", "blueprint"];
+    if (below.includes(project.status as string)) {
+      const { error } = await supabase
+        .from("projects")
+        .update({ status: "launch", updated_at: new Date().toISOString() })
+        .eq("id", project.id);
+      if (error) { toast.error(error.message); return; }
+    }
+    onSaved("launch");
+  };
+
+  const ideaName = (project.chosen_idea as any)?.name ?? "your idea";
+
+  return (
+    <div className="space-y-5 rounded-xl border border-border bg-card p-6 shadow-card">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Step 4 — Blueprint</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Build-ready PRD for <span className="font-medium text-foreground">{ideaName}</span>.
+          </p>
+        </div>
+        {md && !running && (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={copyAll}>
+              <Copy className="h-3.5 w-3.5" />
+              Copy Blueprint
+            </Button>
+            <Button variant="outline" size="sm" onClick={copyBuildPrompt}>
+              <Copy className="h-3.5 w-3.5" />
+              Copy Build Prompt
+            </Button>
+            <Button variant="outline" size="sm" onClick={download}>
+              <Download className="h-3.5 w-3.5" />
+              Download .md
+            </Button>
+            <Button variant="outline" size="sm" onClick={run} disabled={running}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Regenerate (10 credits)
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Loading skeleton */}
+      {running && (
+        <div className="space-y-5">
+          <p className="animate-pulse text-sm text-muted-foreground">Generating blueprint — this can take 15–30 s…</p>
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="animate-pulse space-y-2">
+              <div className={cn("h-5 rounded bg-muted", i % 3 === 0 ? "w-1/3" : "w-1/2")} />
+              <div className="h-3 w-full rounded bg-muted" />
+              <div className="h-3 w-4/5 rounded bg-muted" />
+              {i % 2 === 0 && <div className="h-3 w-2/3 rounded bg-muted" />}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Error state */}
+      {blueprintError && !running && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+          <p className="text-sm font-medium text-destructive">Blueprint generation failed</p>
+          <p className="mt-1 text-sm text-muted-foreground">{blueprintError}</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={run}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {/* Rendered blueprint */}
+      {md && !running && (
+        <div className="space-y-4">
+          <div className="rounded-lg border border-border bg-background p-6">
+            <MarkdownView md={md} />
+          </div>
+          <div className="flex items-center gap-3 border-t border-border pt-4">
+            <Button onClick={goToLaunch} className="bg-gradient-electric text-primary-foreground shadow-glow">
+              Create Launch Plan <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MarkdownView({ md }: { md: string }) {
+  const lines = md.split("\n");
+  const nodes: React.ReactNode[] = [];
+  let i = 0;
+
+  const parseLine = (text: string): React.ReactNode => {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((p, idx) =>
+      p.startsWith("**") && p.endsWith("**")
+        ? <strong key={idx}>{p.slice(2, -2)}</strong>
+        : p
+    );
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line.startsWith("# ")) {
+      nodes.push(
+        <h1 key={i} className="mb-3 mt-2 text-2xl font-bold text-foreground">
+          {parseLine(line.slice(2))}
+        </h1>,
+      );
+      i++;
+    } else if (line.startsWith("## ")) {
+      nodes.push(
+        <h2 key={i} className="mb-2 mt-7 border-b border-border pb-1.5 text-base font-semibold text-foreground first:mt-0">
+          {parseLine(line.slice(3))}
+        </h2>,
+      );
+      i++;
+    } else if (line.startsWith("### ")) {
+      nodes.push(
+        <h3 key={i} className="mb-1.5 mt-4 text-sm font-semibold text-foreground">
+          {parseLine(line.slice(4))}
+        </h3>,
+      );
+      i++;
+    } else if (line.startsWith("```")) {
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      nodes.push(
+        <pre key={i} className="my-4 overflow-x-auto rounded-lg border border-border bg-muted/50 p-4 text-xs leading-relaxed">
+          <code>{codeLines.join("\n")}</code>
+        </pre>,
+      );
+      i++; // skip closing ```
+    } else if (line.match(/^[-*] /)) {
+      const items: string[] = [];
+      while (i < lines.length && lines[i].match(/^[-*] /)) {
+        items.push(lines[i].slice(2));
+        i++;
+      }
+      nodes.push(
+        <ul key={i} className="my-2 ml-5 list-disc space-y-1">
+          {items.map((item, j) => (
+            <li key={j} className="text-sm text-foreground/90">{parseLine(item)}</li>
+          ))}
+        </ul>,
+      );
+    } else if (line.match(/^\d+\. /)) {
+      const items: string[] = [];
+      while (i < lines.length && lines[i].match(/^\d+\. /)) {
+        items.push(lines[i].replace(/^\d+\. /, ""));
+        i++;
+      }
+      nodes.push(
+        <ol key={i} className="my-2 ml-5 list-decimal space-y-1">
+          {items.map((item, j) => (
+            <li key={j} className="text-sm text-foreground/90">{parseLine(item)}</li>
+          ))}
+        </ol>,
+      );
+    } else if (line.trim() === "") {
+      i++;
+    } else {
+      nodes.push(
+        <p key={i} className="my-1.5 text-sm leading-relaxed text-foreground/90">
+          {parseLine(line)}
+        </p>,
+      );
+      i++;
+    }
+  }
+
+  return <div>{nodes}</div>;
 }
 
 // ---------- Placeholder for steps 2-5 ----------
