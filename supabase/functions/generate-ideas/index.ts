@@ -26,7 +26,7 @@ Deno.serve(async (req: Request) => {
     if (authErr || !user) return fail("Unauthorized", 401);
 
     // 2. Parse body
-    const { projectId, researchNotes = "" } = await req.json();
+    const { projectId, researchNotes = "", mode = "fast" } = await req.json();
     if (!projectId) return fail("projectId required", 400);
 
     // 3. Load project (RLS enforces ownership)
@@ -65,9 +65,21 @@ Deno.serve(async (req: Request) => {
         .eq("id", projectId);
     }
 
-    // 6. Build Gemini prompt (exact system prompt from spec)
-    const prompt =
-      `You are an expert app idea researcher and micro-SaaS strategist for solo founders.
+    // 6. Build Gemini prompt — extraction vs. generation depending on mode
+    const isResearch = mode === "research" && notes.trim().length > 0;
+    const prompt = isResearch
+      ? `You are a JSON extraction assistant for a solo founder app.
+The user ran a research prompt and got back a structured list of app ideas from an AI tool. Your job is to faithfully extract those ideas into the required JSON format — do NOT invent new ideas, do NOT replace or rewrite the ideas, do NOT add your own. Preserve the names, problems, evidence, and reasoning exactly as stated.
+
+USER PROFILE: ${JSON.stringify(project.profile_data)}
+PASTED IDEAS OUTPUT:
+${notes}
+
+Extract every idea from the pasted output above (typically 10). For each idea, map it to this JSON object — pull the information from the pasted text, paraphrase only if needed to fit the field:
+{ name (max 4 words, use the app name from the paste), promise (one sentence — the core value prop), problem (2-3 sentences — the pain being solved), evidence (what market signal was cited in the paste), target_user (who it is for), why_they_care (their motivation), usage_frequency (daily/weekly/monthly/occasional), monetization_angle (use the pricing from the paste, or lead magnet / $9-19/mo / $47-97 lifetime / $197+ premium), build_difficulty_1_10 (number — use the simplicity score from the paste if present, else estimate), content_angle (how this idea generates content or audience) }
+
+Return ONLY a JSON array. No prose outside JSON.`
+      : `You are an expert app idea researcher and micro-SaaS strategist for solo founders.
 USER PROFILE: ${JSON.stringify(project.profile_data)}
 RESEARCH NOTES (may be empty): ${notes}
 Generate 5-7 practical digital tool ideas. If research notes are provided, ground ideas in them; otherwise reason from the profile. Rules: no generic ideas; each buildable as a simple web/PWA tool by a solo builder in 1-7 days; avoid ideas needing marketplace liquidity, heavy regulation, medical/legal accuracy, enterprise sales, or hardware.
@@ -85,7 +97,7 @@ Return ONLY a JSON array of objects, no prose, each: { name (max 4 words), promi
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
-            temperature: 1.0,
+            temperature: isResearch ? 0.3 : 1.0,
             maxOutputTokens: 8192,
             responseMimeType: "application/json",
           },

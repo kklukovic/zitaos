@@ -414,7 +414,11 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
     setDiscoverError(null);
     try {
       const { data, error } = await supabase.functions.invoke("generate-ideas", {
-        body: { projectId: project.id, researchNotes: mode === "research" ? notes : "" },
+        body: {
+          projectId: project.id,
+          researchNotes: mode === "research" ? notes : "",
+          mode,
+        },
       });
       if (error) {
         let msg = error.message ?? "Generation failed — try again.";
@@ -498,12 +502,30 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
         </Button>
       )}
 
-      {/* Deep Research Mode: instructions → prompt → textarea → generate */}
+      {/* Deep Research Mode: how-it-works → prompt → textarea → extract */}
       {!ideas && !running && mode === "research" && (
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            For real, researched ideas: copy the prompt below, fill in the bracketed parts, run it in ChatGPT, Claude, or Gemini with web search ON, then paste the full output here.
-          </p>
+        <div className="space-y-5">
+          {/* How it works */}
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-5">
+            <p className="mb-4 text-sm font-semibold text-foreground">How Deep Research Mode works</p>
+            <ol className="space-y-3">
+              {[
+                "Copy the SUPER IDEAS PROMPT below",
+                "Edit the ABOUT ME section (and preferences if you want)",
+                "Paste it into ChatGPT, Claude, or Gemini with web search turned ON",
+                "You'll get 10 researched app ideas with full details",
+                "Copy ALL 10 ideas, paste them in the box below, then click Extract Ideas",
+                "ZITA structures and scores them so you can pick your winner",
+              ].map((step, i) => (
+                <li key={i} className="flex items-start gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary">
+                    {i + 1}
+                  </span>
+                  <span className="text-sm leading-relaxed text-foreground/90">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
@@ -518,19 +540,19 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
             </div>
           </div>
 
-          <Field label="Paste your research results here">
+          <Field label="Paste all 10 ideas from your AI tool here">
             <Textarea
               rows={6}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Paste the AI research output here…"
+              placeholder="Paste the full AI output here…"
               disabled={running}
             />
           </Field>
 
           <Button onClick={() => run()} className="bg-gradient-electric text-primary-foreground shadow-glow">
             <Sparkles className="h-4 w-4" />
-            Generate Ideas (8 credits)
+            Extract Ideas (8 credits)
           </Button>
         </div>
       )}
