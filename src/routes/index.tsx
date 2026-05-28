@@ -44,9 +44,9 @@ function Landing() {
           </Link>
           <div className="flex items-center gap-2">
             <Link to="/auth" className="text-sm text-muted-foreground hover:text-foreground">Sign in</Link>
-            <Link to="/auth" search={{ mode: "signup" }} className="rounded-md bg-gradient-electric px-4 py-2 text-sm font-medium text-primary-foreground shadow-glow">
+            <a href="https://earnmoon.thrivecart.com/zita-os-founder-access/" target="_blank" rel="noopener noreferrer" className="rounded-md bg-gradient-electric px-4 py-2 text-sm font-medium text-primary-foreground shadow-glow">
               Founder access
-            </Link>
+            </a>
           </div>
         </div>
       </header>
@@ -64,9 +64,9 @@ function Landing() {
           score, full blueprint, and a launch plan — in one sitting.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <Link to="/auth" search={{ mode: "signup" }} className="inline-flex items-center gap-2 rounded-md bg-gradient-electric px-6 py-3 text-sm font-semibold text-primary-foreground shadow-glow">
+          <a href="https://earnmoon.thrivecart.com/zita-os-founder-access/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-md bg-gradient-electric px-6 py-3 text-sm font-semibold text-primary-foreground shadow-glow">
             Let ZITA help you find your app idea <ArrowRight className="h-4 w-4" />
-          </Link>
+          </a>
           <Link to="/auth" className="inline-flex items-center rounded-md border border-border bg-card/50 px-6 py-3 text-sm font-medium">
             Sign in
           </Link>
@@ -114,9 +114,9 @@ function Landing() {
               </li>
             ))}
           </ul>
-          <Link to="/auth" search={{ mode: "signup" }} className="mt-8 inline-flex rounded-md bg-gradient-electric px-6 py-3 text-sm font-semibold text-primary-foreground shadow-glow">
+          <a href="https://earnmoon.thrivecart.com/zita-os-founder-access/" target="_blank" rel="noopener noreferrer" className="mt-8 inline-flex rounded-md bg-gradient-electric px-6 py-3 text-sm font-semibold text-primary-foreground shadow-glow">
             Claim founder access
-          </Link>
+          </a>
         </div>
       </section>
 
