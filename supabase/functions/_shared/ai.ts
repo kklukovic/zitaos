@@ -13,15 +13,15 @@ export type Provider = "gemini" | "anthropic";
 export type CallAIOpts = {
   system: string;
   prompt: string;
-  jsonMode?: boolean;    // force JSON output
-  temperature?: number;  // 0–1 recommended (Gemini supports up to 2)
+  jsonMode?: boolean;   // force JSON output
+  temperature?: number; // 0–1 recommended (Gemini supports up to 2)
   maxTokens?: number;
 };
 
 export type AIResult = {
   text: string;
   provider: Provider;
-  model: string;         // exact model string, use this for credit_usage logging
+  model: string; // exact model string, safe to log in credit_usage
 };
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -29,22 +29,37 @@ export type AIResult = {
 /**
  * Call the AI with automatic provider fallback.
  * Tries each provider in AI_PROVIDER_ORDER in sequence.
- * Only throws if ALL providers fail — never exposes raw provider errors to callers.
+ * On failure: logs the FULL provider error (status + body) then falls through.
+ * Only throws when ALL providers have failed, with each provider's full error included.
  */
 export async function callAI(opts: CallAIOpts): Promise<AIResult> {
   const failures: string[] = [];
+  const order = AI_PROVIDER_ORDER;
 
-  for (const provider of AI_PROVIDER_ORDER) {
+  console.log(`[ai] starting — provider order: ${order.join(", ")}`);
+
+  for (let i = 0; i < order.length; i++) {
+    const provider = order[i];
+    const next = order[i + 1];
+
     try {
-      return await dispatch(provider, opts);
+      console.log(`[ai] trying ${provider} (attempt ${i + 1}/${order.length})`);
+      const result = await dispatch(provider, opts);
+      console.log(`[ai] ${provider} succeeded — model=${result.model}`);
+      return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[ai] provider=${provider} failed:`, msg);
-      failures.push(`${provider}: ${msg}`);
+      console.error(`[ai] ${provider} FAILED: ${msg}`);
+      failures.push(`[${provider}] ${msg}`);
+      if (next) {
+        console.log(`[ai] falling through to ${next}...`);
+      }
+      // loop continues to next provider
     }
   }
 
-  throw new Error(`AI unavailable — all providers failed. ${failures.join(" | ")}`);
+  // Reached only when every provider has been tried and failed
+  throw new Error(`All AI providers failed: ${failures.join(" || ")}`);
 }
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
@@ -59,8 +74,10 @@ function dispatch(provider: Provider, opts: CallAIOpts): Promise<AIResult> {
 // ── Gemini adapter ────────────────────────────────────────────────────────────
 
 async function callGemini(opts: CallAIOpts): Promise<AIResult> {
+  // Read and validate key presence — log presence but never the key value
   const key = Deno.env.get("GEMINI_API_KEY");
-  if (!key) throw new Error("GEMINI_API_KEY not configured");
+  console.log(`[ai:gemini] key_present=${!!key}`);
+  if (!key) throw new Error("GEMINI_API_KEY secret not set in Supabase");
 
   const genConfig: Record<string, unknown> = {
     temperature: opts.temperature ?? 0.5,
@@ -82,13 +99,19 @@ async function callGemini(opts: CallAIOpts): Promise<AIResult> {
   );
 
   if (!res.ok) {
+    // Read full body so Google's actual error message is visible in logs and error
     const body = await res.text();
-    throw new Error(`HTTP ${res.status}: ${body.slice(0, 300)}`);
+    console.error(`[ai:gemini] status=${res.status} body=${body}`);
+    throw new Error(`Gemini ${res.status}: ${body}`);
   }
 
   const json = await res.json();
   const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  if (!text) throw new Error("Empty response");
+  if (!text) {
+    const raw = JSON.stringify(json).slice(0, 500);
+    console.error(`[ai:gemini] empty text — raw response: ${raw}`);
+    throw new Error(`Gemini returned empty text. Raw: ${raw}`);
+  }
 
   return { text, provider: "gemini", model: GEMINI_MODEL };
 }
@@ -97,17 +120,18 @@ async function callGemini(opts: CallAIOpts): Promise<AIResult> {
 
 async function callAnthropic(opts: CallAIOpts): Promise<AIResult> {
   const key = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!key) throw new Error("ANTHROPIC_API_KEY not configured");
+  console.log(`[ai:anthropic] key_present=${!!key}`);
+  if (!key) throw new Error("ANTHROPIC_API_KEY secret not set in Supabase");
 
-  // Anthropic has no native jsonMode — enforce via system instruction.
+  // Anthropic has no native jsonMode — enforce via system instruction
   const system = opts.jsonMode
     ? `${opts.system}\n\nCRITICAL: Output ONLY valid JSON. No markdown fences, no prose, no explanation before or after.`
     : opts.system;
 
-  // Clamp temperature to Anthropic's 0–1 range.
+  // Clamp temperature to Anthropic's 0–1 range
   const temperature = Math.min(opts.temperature ?? 0.5, 1.0);
 
-  // Haiku 4.5 max output is 8192 tokens — never exceed it.
+  // Haiku 4.5 hard limit is 8192 output tokens
   const max_tokens = Math.min(opts.maxTokens ?? 8192, 8192);
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -128,12 +152,17 @@ async function callAnthropic(opts: CallAIOpts): Promise<AIResult> {
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`HTTP ${res.status}: ${body.slice(0, 300)}`);
+    console.error(`[ai:anthropic] status=${res.status} body=${body}`);
+    throw new Error(`Anthropic ${res.status}: ${body}`);
   }
 
   const json = await res.json();
   const text: string = json.content?.[0]?.text ?? "";
-  if (!text) throw new Error("Empty response");
+  if (!text) {
+    const raw = JSON.stringify(json).slice(0, 500);
+    console.error(`[ai:anthropic] empty text — raw response: ${raw}`);
+    throw new Error(`Anthropic returned empty text. Raw: ${raw}`);
+  }
 
   return { text, provider: "anthropic", model: ANTHROPIC_MODEL };
 }

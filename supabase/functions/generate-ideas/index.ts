@@ -134,8 +134,10 @@ Deno.serve(async (req: Request) => {
 
     return ok({ ideas });
   } catch (e) {
-    console.error("generate-ideas unhandled:", e);
-    return fail(e instanceof Error ? e.message : "Internal error", 500);
+    // Surface the real error — includes full provider status + body from callAI
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("generate-ideas unhandled:", msg);
+    return fail(msg, 500);
   }
 });
 
