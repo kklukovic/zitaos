@@ -17,6 +17,7 @@ export const Route = createFileRoute("/_authenticated")({
 const nav = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/projects", label: "Projects", icon: FolderKanban },
+  { to: "/saved-ideas", label: "Saved Ideas", icon: Bookmark },
   { to: "/library", label: "Growth Library", icon: BookOpen },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
