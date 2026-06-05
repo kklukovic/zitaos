@@ -9,9 +9,9 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   Target, Sparkles, Zap, FileCode, Rocket, Check, Lock, ArrowRight, Loader2,
-  RefreshCw, ChevronDown, Copy, Download, ExternalLink, AlertTriangle,
+  RefreshCw, ChevronDown, Copy, Download, ExternalLink, AlertTriangle, Bookmark, BookmarkCheck,
 } from "lucide-react";
-import { type Idea, type ScoredIdea } from "@/lib/zita.functions";
+
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/project/$id")({
@@ -381,6 +381,39 @@ type ResearchedIdea = {
   final_verdict: string;
 };
 
+// Total score across the 5 sub-scores (out of 50). Single source of truth — change here to adjust formula.
+export function totalScore(scores: ResearchedIdea["scores"] | undefined | null): number {
+  if (!scores) return 0;
+  return (scores.pain ?? 0) + (scores.willingness_to_pay ?? 0) + (scores.simplicity ?? 0) + (scores.retention ?? 0) + (scores.fit ?? 0);
+}
+
+function useSavedIdeas(projectId: string) {
+  const qc = useQueryClient();
+  const { data: savedNames } = useQuery({
+    queryKey: ["saved-ideas-names", projectId],
+    queryFn: async () => {
+      const { data } = await supabase.from("saved_ideas").select("idea").eq("source_project_id", projectId);
+      const set = new Set<string>();
+      (data ?? []).forEach((r: any) => { const n = r?.idea?.name; if (n) set.add(n); });
+      return set;
+    },
+  });
+  const save = async (idea: ResearchedIdea) => {
+    const { data: u } = await supabase.auth.getUser();
+    if (!u.user) { toast.error("Not signed in"); return; }
+    const { error } = await supabase.from("saved_ideas").insert({
+      user_id: u.user.id,
+      source_project_id: projectId,
+      idea: idea as never,
+    });
+    if (error) { toast.error(error.message); return; }
+    toast.success(`Saved "${idea.name}" for later`);
+    qc.invalidateQueries({ queryKey: ["saved-ideas-names", projectId] });
+    qc.invalidateQueries({ queryKey: ["saved-ideas-all"] });
+  };
+  return { savedNames: savedNames ?? new Set<string>(), save };
+}
+
 function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Status) => void }) {
   const rawIdeas = project.ideas as any[] | null;
   const existingIdeas: ResearchedIdea[] | null =
@@ -398,6 +431,7 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
     (project.chosen_idea as any)?.name ?? null,
   );
   const [discoverError, setDiscoverError] = useState<string | null>(null);
+  const { savedNames, save: saveForLater } = useSavedIdeas(project.id);
 
   useEffect(() => {
     if (!running) { setLoadingStepIdx(0); return; }
@@ -448,7 +482,7 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
     onSaved("score");
   };
 
-  const goToScore = async () => {
+  const continueToScore = async () => {
     if (["profile", "discover"].includes(project.status as string)) {
       const { error } = await supabase
         .from("projects")
@@ -581,14 +615,20 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
               isChosen={chosen === idea.name}
               onToggle={() => setExpanded(expanded === i ? null : i)}
               onChoose={() => chooseIdea(idea)}
+              isSaved={savedNames.has(idea.name)}
+              onSave={() => saveForLater(idea)}
             />
           ))}
-          <div className="border-t border-border pt-4">
+          <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+            <Button variant="outline" onClick={() => run(true)} disabled={running}>
+              <RefreshCw className="h-4 w-4" />
+              I don't like these — give me 10 more (10 credits)
+            </Button>
             <Button
-              onClick={goToScore}
+              onClick={continueToScore}
               className="bg-gradient-electric text-primary-foreground shadow-glow"
             >
-              Score All Ideas <ArrowRight className="h-4 w-4" />
+              Continue <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -609,15 +649,25 @@ function ResearchIdeaCard({
   isChosen,
   onToggle,
   onChoose,
+  isSaved,
+  onSave,
+  rank,
+  showTotal,
 }: {
   idea: ResearchedIdea;
   expanded: boolean;
   isChosen: boolean;
   onToggle: () => void;
   onChoose: () => void;
+  isSaved?: boolean;
+  onSave?: () => void;
+  rank?: number;
+  showTotal?: boolean;
 }) {
   const strength = idea.evidence_strength ?? "Weak";
   const isWeak = strength === "Weak";
+  const total = totalScore(idea.scores);
+  const totalColor = total >= 40 ? "text-green-500" : total >= 30 ? "text-yellow-500" : "text-muted-foreground";
 
   return (
     <div
@@ -631,6 +681,11 @@ function ResearchIdeaCard({
         onClick={onToggle}
         className="flex w-full items-start gap-3 p-4 text-left transition hover:bg-accent/30"
       >
+        {typeof rank === "number" && (
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-sm font-bold text-primary">
+            {rank}
+          </div>
+        )}
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold">{idea.name}</span>
@@ -642,6 +697,11 @@ function ResearchIdeaCard({
             >
               {strength}
             </span>
+            {showTotal && (
+              <span className={cn("rounded-md border border-border px-2 py-0.5 text-xs font-bold tabular-nums", totalColor)}>
+                {total}/50
+              </span>
+            )}
             <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
               {idea.usage_frequency}
             </span>
@@ -653,6 +713,9 @@ function ResearchIdeaCard({
           </div>
           <p className="text-xs text-muted-foreground">{idea.target_audience}</p>
           <p className="line-clamp-2 text-sm text-foreground/90">{idea.core_problem}</p>
+          {showTotal && idea.final_verdict && (
+            <p className="line-clamp-1 text-xs italic text-muted-foreground">{idea.final_verdict}</p>
+          )}
           {isWeak && (
             <p className="flex items-center gap-1.5 text-xs text-amber-400">
               <AlertTriangle className="h-3 w-3" />
@@ -715,9 +778,14 @@ function ResearchIdeaCard({
 
           {idea.scores && (
             <div>
-              <span className="text-xs uppercase tracking-wider text-muted-foreground">
-                Scores (1–10)
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Scores (1–10)
+                </span>
+                <span className={cn("text-xs font-bold tabular-nums", totalColor)}>
+                  Total {total}/50
+                </span>
+              </div>
               <div className="mt-2 flex flex-wrap gap-4">
                 {(Object.entries(idea.scores) as [string, number][]).map(([key, val]) => (
                   <div key={key} className="flex flex-col items-center gap-0.5">
@@ -747,7 +815,7 @@ function ResearchIdeaCard({
             <p className="mt-1 font-medium text-foreground">{idea.final_verdict}</p>
           </div>
 
-          <div className="border-t border-border pt-3">
+          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
             <Button
               size="sm"
               variant={isChosen ? "default" : "outline"}
@@ -762,6 +830,17 @@ function ResearchIdeaCard({
                 "Choose this idea"
               )}
             </Button>
+            {onSave && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onSave}
+                disabled={isSaved}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                {isSaved ? <><BookmarkCheck className="h-3 w-3" /> Saved</> : <><Bookmark className="h-3 w-3" /> Save for later</>}
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -778,230 +857,70 @@ function IdeaDetail({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ---------- Step 3: Score ----------
+// ---------- Step 3: Score & Rank ----------
 function ScorePanel({ project, onSaved }: { project: any; onSaved: (next: Status) => void }) {
-  const existingScored = (project.scored_ideas as ScoredIdea[] | null) ?? null;
+  const rawIdeas = project.ideas as any[] | null;
+  const ideas: ResearchedIdea[] = (rawIdeas ?? []).filter(
+    (i) => i && typeof i?.evidence_strength === "string",
+  ) as ResearchedIdea[];
+
+  const ranked = [...ideas].sort((a, b) => totalScore(b.scores) - totalScore(a.scores));
+
   const existingChosen = (project.chosen_idea as { name: string } | null)?.name ?? null;
-  const autoRun = !existingScored;
-  const didAutoRun = useRef(false);
-
-  const [scored, setScored] = useState<ScoredIdea[] | null>(existingScored);
   const [chosen, setChosen] = useState<string | null>(existingChosen);
-  const [running, setRunning] = useState(autoRun);
-  const [scoreError, setScoreError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const { savedNames, save: saveForLater } = useSavedIdeas(project.id);
 
-  const run = async () => {
-    setRunning(true);
-    setScoreError(null);
-    try {
-      const { data, error } = await supabase.functions.invoke("score-ideas", {
-        body: { projectId: project.id },
-      });
-
-      // supabase-js wraps non-2xx responses in a FunctionsHttpError whose
-      // .message is a generic string. Pull the actual message from the body.
-      if (error) {
-        let msg = error.message ?? "Scoring failed — try again.";
-        try {
-          const body = await (error as any).context?.json?.();
-          if (body?.error) msg = body.error;
-        } catch {}
-        throw new Error(msg);
-      }
-      if (data?.error) throw new Error(data.error);
-      if (!Array.isArray(data?.scored)) throw new Error("Unexpected response from score-ideas — try again.");
-
-      setScored(data.scored);
-      toast.success("Ideas scored!");
-    } catch (err: any) {
-      const msg = err?.message ?? "Scoring failed — try again.";
-      console.error("score-ideas error:", err);
-      setScoreError(msg);
-      toast.error(msg);
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  useEffect(() => {
-    if (autoRun && !didAutoRun.current) {
-      didAutoRun.current = true;
-      run();
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const choose = async (ideaName: string) => {
-    const ideaObj =
-      (project.ideas as Idea[] | null)?.find((i) => i.name === ideaName) ??
-      { name: ideaName };
+  const choose = async (idea: ResearchedIdea) => {
     const { error } = await supabase
       .from("projects")
-      .update({ chosen_idea: ideaObj, updated_at: new Date().toISOString() })
+      .update({
+        chosen_idea: idea as never,
+        status: "blueprint",
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", project.id);
     if (error) { toast.error(error.message); return; }
-    setChosen(ideaName);
-    toast.success(`"${ideaName}" selected`);
-  };
-
-  const goToBlueprint = async () => {
-    const below = ["profile", "discover", "score"];
-    if (below.includes(project.status as string)) {
-      const { error } = await supabase
-        .from("projects")
-        .update({ status: "blueprint", updated_at: new Date().toISOString() })
-        .eq("id", project.id);
-      if (error) { toast.error(error.message); return; }
-    }
+    setChosen(idea.name);
+    toast.success(`"${idea.name}" selected`);
     onSaved("blueprint");
   };
 
   return (
     <div className="space-y-5 rounded-xl border border-border bg-card p-6 shadow-card">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold">Step 3 — Score Ideas</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Ranked across 6 founder-fit dimensions. Pick the one you'll build.</p>
-        </div>
-        {scored && !running && (
-          <Button variant="outline" size="sm" onClick={run} disabled={running}>
-            <RefreshCw className="h-3.5 w-3.5" />
-            Re-score (4 credits)
-          </Button>
-        )}
+      <div>
+        <h2 className="text-lg font-semibold">Step 3 — Score & Rank</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Ideas ranked by total score across pain, willingness to pay, simplicity, retention, and fit (max 50). Pick the one you'll build.
+        </p>
       </div>
 
-      {/* Loading skeleton */}
-      {running && (
+      {ranked.length === 0 ? (
+        <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+          No ideas to rank yet — go back to Discover and research some ideas first.
+        </div>
+      ) : (
         <div className="space-y-3">
-          <p className="animate-pulse text-sm text-muted-foreground">Scoring ideas — this can take 15–30 s…</p>
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="animate-pulse rounded-lg border border-border bg-muted/20 p-3">
-              <div className="mb-2.5 h-4 w-1/4 rounded bg-muted" />
-              <div className="flex gap-2">
-                {Array.from({ length: 7 }).map((_, j) => (
-                  <div key={j} className="h-5 w-9 rounded bg-muted" />
-                ))}
-              </div>
-            </div>
+          {ranked.map((idea, i) => (
+            <ResearchIdeaCard
+              key={idea.name + i}
+              idea={idea}
+              rank={i + 1}
+              showTotal
+              expanded={expanded === i}
+              isChosen={chosen === idea.name}
+              onToggle={() => setExpanded(expanded === i ? null : i)}
+              onChoose={() => choose(idea)}
+              isSaved={savedNames.has(idea.name)}
+              onSave={() => saveForLater(idea)}
+            />
           ))}
-        </div>
-      )}
-
-      {/* Error state with Retry */}
-      {scoreError && !running && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
-          <p className="text-sm font-medium text-destructive">Scoring failed</p>
-          <p className="mt-1 text-sm text-muted-foreground">{scoreError}</p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={run}>
-            <RefreshCw className="h-3.5 w-3.5" />
-            Retry
-          </Button>
-        </div>
-      )}
-
-      {/* Ranked table */}
-      {scored && !running && (
-        <div className="space-y-4">
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/30 text-muted-foreground">
-                  <th className="px-3 py-2.5 text-left font-medium">#</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Idea</th>
-                  <th className="px-3 py-2.5 text-center font-medium" title="Pain level">Pain</th>
-                  <th className="px-3 py-2.5 text-center font-medium" title="Build ease">Build</th>
-                  <th className="px-3 py-2.5 text-center font-medium" title="Monetization potential">$$$</th>
-                  <th className="px-3 py-2.5 text-center font-medium" title="Content potential">Content</th>
-                  <th className="px-3 py-2.5 text-center font-medium" title="Conversation potential">Convo</th>
-                  <th className="px-3 py-2.5 text-center font-medium" title="Founder offer potential">Offer</th>
-                  <th className="px-3 py-2.5 text-center font-medium">Total</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Verdict</th>
-                  <th className="px-3 py-2.5" />
-                </tr>
-              </thead>
-              <tbody>
-                {scored.map((idea, i) => {
-                  const isChosen = chosen === idea.name;
-                  return (
-                    <tr
-                      key={idea.name}
-                      className={cn(
-                        "border-b border-border last:border-0 transition",
-                        isChosen ? "bg-primary/10" : "hover:bg-accent/20",
-                      )}
-                    >
-                      <td className="px-3 py-3 text-muted-foreground">{i + 1}</td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-1.5">
-                          {isChosen && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                          <span className={cn("font-medium", isChosen && "text-primary")}>{idea.name}</span>
-                        </div>
-                      </td>
-                      <ScoreCell v={idea.scores.pain_level} />
-                      <ScoreCell v={idea.scores.build_ease} />
-                      <ScoreCell v={idea.scores.monetization_potential} />
-                      <ScoreCell v={idea.scores.content_potential} />
-                      <ScoreCell v={idea.scores.conversation_potential} />
-                      <ScoreCell v={idea.scores.founder_offer_potential} />
-                      <td className="px-3 py-3 text-center">
-                        <span className={cn(
-                          "font-bold tabular-nums",
-                          idea.total >= 48 ? "text-green-500" : idea.total >= 36 ? "text-yellow-500" : "text-muted-foreground",
-                        )}>
-                          {idea.total}/60
-                        </span>
-                      </td>
-                      <td className="max-w-[180px] px-3 py-3 text-xs text-muted-foreground">
-                        <p className="line-clamp-2">{idea.verdict}</p>
-                      </td>
-                      <td className="px-3 py-3">
-                        <Button
-                          size="sm"
-                          variant={isChosen ? "default" : "outline"}
-                          onClick={() => choose(idea.name)}
-                          className={cn(isChosen && "border-primary/30 bg-primary/20 text-primary hover:bg-primary/30")}
-                        >
-                          {isChosen ? <><Check className="h-3 w-3" /> Chosen</> : "Choose this Idea"}
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Bottom CTA */}
-          <div className="flex items-center gap-3 border-t border-border pt-4">
-            <Button
-              onClick={goToBlueprint}
-              disabled={!chosen}
-              className="bg-gradient-electric text-primary-foreground shadow-glow"
-            >
-              Create Blueprint <ArrowRight className="h-4 w-4" />
-            </Button>
-            {!chosen && (
-              <p className="text-xs text-muted-foreground">Choose an idea above to continue</p>
-            )}
-            {chosen && (
-              <p className="text-xs text-muted-foreground">
-                Building: <span className="font-medium text-foreground">{chosen}</span>
-              </p>
-            )}
-          </div>
         </div>
       )}
     </div>
   );
 }
 
-function ScoreCell({ v }: { v: number }) {
-  const color = v >= 8 ? "text-green-500" : v >= 6 ? "text-yellow-500" : "text-muted-foreground";
-  return (
-    <td className={cn("px-3 py-3 text-center font-medium tabular-nums", color)}>{v}</td>
-  );
-}
 
 // ---------- Step 4: Blueprint ----------
 function extractBuildPrompt(md: string): string {
