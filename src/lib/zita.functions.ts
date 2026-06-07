@@ -84,15 +84,34 @@ async function callAI(opts: {
 
 async function chargeCredits(ctx: { supabase: any; userId: string }, projectId: string, action: Action) {
   const cost = COSTS[action];
-  // Use admin client: end users are not permitted to update `credits` directly (RLS column grant).
-  const { data: prof, error: pErr } = await supabaseAdmin.from("profiles").select("credits").eq("id", ctx.userId).single();
-  if (pErr || !prof) throw new Error("Could not read credits");
-  if (prof.credits < cost) throw new Error(`Not enough credits — need ${cost}, have ${prof.credits}`);
-  const { error: uErr } = await supabaseAdmin.from("profiles").update({ credits: prof.credits - cost }).eq("id", ctx.userId);
-  if (uErr) throw new Error("Could not deduct credits");
-  await ctx.supabase.from("credit_usage").insert({
+  // Atomic deduction via security-definer RPC — prevents TOCTOU race
+  const { error: dErr } = await supabaseAdmin.rpc("deduct_credits", {
+    _user_id: ctx.userId,
+    _cost: cost,
+  });
+  if (dErr) {
+    if ((dErr.message || "").includes("insufficient_credits")) {
+      throw new Error(`Not enough credits — need ${cost}`);
+    }
+    throw new Error("Could not deduct credits");
+  }
+  // Audit log via service role (INSERT on credit_usage is denied for end users)
+  await supabaseAdmin.from("credit_usage").insert({
     user_id: ctx.userId, project_id: projectId, action, credits_used: cost, ai_model: DEFAULT_MODEL,
   });
+}
+
+async function refundCredits(userId: string, action: Action) {
+  await supabaseAdmin.rpc("refund_credits", { _user_id: userId, _amount: COSTS[action] });
+}
+
+async function withRefundOnFailure<T>(userId: string, action: Action, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    await refundCredits(userId, action);
+    throw e;
+  }
 }
 
 const projectIdInput = z.object({ projectId: z.string().uuid() });
@@ -171,8 +190,11 @@ Generate 5-7 practical digital tool ideas.`;
       },
     };
 
-    const result = (await callAI({ system, user, tool })) as { ideas: Idea[] };
-    await context.supabase.from("projects").update({ ideas: result.ideas as never, status: "discover" }).eq("id", data.projectId);
+    const result = await withRefundOnFailure(context.userId, "discover", async () => {
+      const r = (await callAI({ system, user, tool })) as { ideas: Idea[] };
+      await context.supabase.from("projects").update({ ideas: r.ideas as never, status: "discover" }).eq("id", data.projectId);
+      return r;
+    });
     return { ideas: result.ideas };
   });
 
@@ -231,9 +253,12 @@ Score each 1-10 on: pain_level, build_ease, monetization_potential, content_pote
       },
     };
 
-    const result = (await callAI({ system, user, tool })) as { scored: ScoredIdea[] };
-    result.scored.sort((a, b) => b.total - a.total);
-    await context.supabase.from("projects").update({ scored_ideas: result.scored as never, status: "score" }).eq("id", data.projectId);
+    const result = await withRefundOnFailure(context.userId, "score", async () => {
+      const r = (await callAI({ system, user, tool })) as { scored: ScoredIdea[] };
+      r.scored.sort((a, b) => b.total - a.total);
+      await context.supabase.from("projects").update({ scored_ideas: r.scored as never, status: "score" }).eq("id", data.projectId);
+      return r;
+    });
     return { scored: result.scored };
   });
 
@@ -280,10 +305,13 @@ Then at the very end:
 
 Return ONLY the markdown, no preamble.`;
 
-    const md = (await callAI({ system, user })) as string;
-    await context.supabase.from("projects").update({
-      blueprint_markdown: md, chosen_idea: chosen, status: "blueprint",
-    }).eq("id", data.projectId);
+    const md = await withRefundOnFailure(context.userId, "blueprint", async () => {
+      const m = (await callAI({ system, user })) as string;
+      await context.supabase.from("projects").update({
+        blueprint_markdown: m, chosen_idea: chosen, status: "blueprint",
+      }).eq("id", data.projectId);
+      return m;
+    });
     return { markdown: md };
   });
 
@@ -328,10 +356,13 @@ Generate a complete Launch Kit as Markdown with sections:
 
 Return ONLY the markdown, no preamble.`;
 
-    const md = (await callAI({ system, user })) as string;
-    await context.supabase.from("projects").update({
-      launch_kit_markdown: md, status: "launch",
-    }).eq("id", data.projectId);
+    const md = await withRefundOnFailure(context.userId, "launch", async () => {
+      const m = (await callAI({ system, user })) as string;
+      await context.supabase.from("projects").update({
+        launch_kit_markdown: m, status: "launch",
+      }).eq("id", data.projectId);
+      return m;
+    });
     return { markdown: md };
   });
 

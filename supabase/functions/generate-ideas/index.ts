@@ -33,6 +33,8 @@ Deno.serve(async (req: Request) => {
     if (!["personalized", "surprise", "validate"].includes(mode)) {
       return fail("Invalid mode — must be personalized | surprise | validate", 400);
     }
+    if (typeof roughIdea !== "string") return fail("roughIdea must be a string", 400);
+    if (roughIdea.length > 20000) return fail("roughIdea too long (max 20000 chars)", 400);
 
     // 3. Load project (RLS enforces ownership)
     const { data: project, error: projErr } = await supabase
@@ -43,51 +45,61 @@ Deno.serve(async (req: Request) => {
 
     if (projErr || !project) return fail("Project not found", 404);
 
-    // 4. Check credits via service role (bypasses column-level RLS)
+    // 4. Atomic credit deduction via service role (prevents TOCTOU race)
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: prof, error: profErr } = await admin
-      .from("profiles")
-      .select("credits")
-      .eq("id", user.id)
-      .single();
-
-    if (profErr || !prof) return fail("Could not read credits", 500);
-    if (prof.credits < RESEARCH_IDEAS_CREDIT_COST) {
-      return fail(
-        `Not enough credits — need ${RESEARCH_IDEAS_CREDIT_COST}, have ${prof.credits}`,
-        402,
-      );
+    const { error: deductErr } = await admin.rpc("deduct_credits", {
+      _user_id: user.id,
+      _cost: RESEARCH_IDEAS_CREDIT_COST,
+    });
+    if (deductErr) {
+      if ((deductErr.message || "").includes("insufficient_credits")) {
+        return fail(`Not enough credits — need ${RESEARCH_IDEAS_CREDIT_COST}`, 402);
+      }
+      return fail("Could not deduct credits", 500);
     }
+
+    const refund = async () => {
+      await admin.rpc("refund_credits", { _user_id: user.id, _amount: RESEARCH_IDEAS_CREDIT_COST });
+    };
 
     const profile = (project.profile_data ?? {}) as Record<string, string>;
 
     // ── STAGE 1: Hypothesis + community evidence generation ───────────────────
     const { system: s1System, prompt: s1Prompt } = buildStage1(mode, profile, roughIdea);
 
-    const s1Result = await callAI({
-      system: s1System,
-      prompt: s1Prompt,
-      jsonMode: true,
-      temperature: 0.8,
-      maxTokens: 16384,
-    });
+    let s1Result, s2Result;
+    try {
+      s1Result = await callAI({
+        system: s1System,
+        prompt: s1Prompt,
+        jsonMode: true,
+        temperature: 0.8,
+        maxTokens: 16384,
+      });
 
-    if (!s1Result.text.trim()) return fail("Research stage returned no content — try again.", 502);
+      if (!s1Result.text.trim()) {
+        await refund();
+        return fail("Research stage returned no content — try again.", 502);
+      }
 
-    // ── STAGE 2: Scoring + card generation ───────────────────────────────────
-    const { system: s2System, prompt: s2Prompt } = buildStage2(profile, s1Result.text);
+      // ── STAGE 2: Scoring + card generation ───────────────────────────────────
+      const { system: s2System, prompt: s2Prompt } = buildStage2(profile, s1Result.text);
 
-    const s2Result = await callAI({
-      system: s2System,
-      prompt: s2Prompt,
-      jsonMode: true,
-      temperature: 0.3,
-      maxTokens: 16384,
-    });
+      s2Result = await callAI({
+        system: s2System,
+        prompt: s2Prompt,
+        jsonMode: true,
+        temperature: 0.3,
+        maxTokens: 16384,
+      });
+    } catch (aiErr) {
+      await refund();
+      throw aiErr;
+    }
 
     // Parse JSON robustly — strip markdown fences and any preamble/trailing text
     let ideas: unknown[];
@@ -122,6 +134,7 @@ Deno.serve(async (req: Request) => {
         "| raw length:", s2Result.text.length,
         "| FULL raw text:\n", s2Result.text,
       );
+      await refund();
       return fail("AI returned invalid JSON — try again.", 502);
     }
 
@@ -133,20 +146,13 @@ Deno.serve(async (req: Request) => {
         (evidenceOrder[b.evidence_strength] ?? 1),
     );
 
-    // ── Credit deduction — only after successful generation ───────────────────
-    const { error: deductErr } = await admin
-      .from("profiles")
-      .update({ credits: prof.credits - RESEARCH_IDEAS_CREDIT_COST })
-      .eq("id", user.id);
-
-    if (deductErr) return fail("Could not deduct credits", 500);
-
+    // Audit log (service role bypasses RLS — user inserts are blocked by policy)
     await admin.from("credit_usage").insert({
       user_id: user.id,
       project_id: projectId,
       action: "research_ideas",
       credits_used: RESEARCH_IDEAS_CREDIT_COST,
-      ai_model: s2Result.model, // logs whichever provider actually answered stage 2
+      ai_model: s2Result.model,
     });
 
     await supabase

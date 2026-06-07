@@ -44,22 +44,25 @@ Deno.serve(async (req: Request) => {
     if (!project.profile_data) return fail("Profile data missing", 400);
     if (!project.blueprint_markdown) return fail("Generate a blueprint first", 400);
 
-    // 4. Read credits — service role bypasses column-level grant
+    // 4. Atomic credit deduction
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: prof, error: profErr } = await admin
-      .from("profiles")
-      .select("credits")
-      .eq("id", user.id)
-      .single();
-
-    if (profErr || !prof) return fail("Could not read credits", 500);
-    if (prof.credits < COST) {
-      return fail(`Not enough credits — need ${COST}, have ${prof.credits}`, 402);
+    const { error: deductErr } = await admin.rpc("deduct_credits", {
+      _user_id: user.id,
+      _cost: COST,
+    });
+    if (deductErr) {
+      if ((deductErr.message || "").includes("insufficient_credits")) {
+        return fail(`Not enough credits — need ${COST}`, 402);
+      }
+      return fail("Could not deduct credits", 500);
     }
+    const refund = async () => {
+      await admin.rpc("refund_credits", { _user_id: user.id, _amount: COST });
+    };
 
     // 5. Build prompt
     const idea = project.chosen_idea as Record<string, string>;
@@ -120,6 +123,7 @@ Be specific and copy-pasteable. No filler.`;
     if (!geminiRes.ok) {
       const body = await geminiRes.text();
       console.error("Gemini error:", geminiRes.status, body);
+      await refund();
       return fail(`AI error ${geminiRes.status} — try again.`, 502);
     }
 
@@ -128,17 +132,11 @@ Be specific and copy-pasteable. No filler.`;
       geminiJson.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 
     if (!markdown.trim()) {
+      await refund();
       return fail("AI returned empty response — try again.", 502);
     }
 
-    // 7. Deduct credits (only after successful generation)
-    const { error: deductErr } = await admin
-      .from("profiles")
-      .update({ credits: prof.credits - COST })
-      .eq("id", user.id);
-    if (deductErr) return fail("Could not deduct credits", 500);
-
-    // 8. Audit log
+    // Audit log (service role bypasses RLS)
     await admin.from("credit_usage").insert({
       user_id: user.id,
       project_id: projectId,

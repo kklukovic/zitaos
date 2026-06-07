@@ -58,22 +58,25 @@ Deno.serve(async (req: Request) => {
     if (!project.ideas) return fail("Generate ideas first", 400);
     if (!project.profile_data) return fail("Profile data missing", 400);
 
-    // 4. Read credits — service role bypasses the column-level grant
+    // 4. Atomic credit deduction (prevents TOCTOU race)
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: prof, error: profErr } = await admin
-      .from("profiles")
-      .select("credits")
-      .eq("id", user.id)
-      .single();
-
-    if (profErr || !prof) return fail("Could not read credits", 500);
-    if (prof.credits < COST) {
-      return fail(`Not enough credits — need ${COST}, have ${prof.credits}`, 402);
+    const { error: deductErr } = await admin.rpc("deduct_credits", {
+      _user_id: user.id,
+      _cost: COST,
+    });
+    if (deductErr) {
+      if ((deductErr.message || "").includes("insufficient_credits")) {
+        return fail(`Not enough credits — need ${COST}`, 402);
+      }
+      return fail("Could not deduct credits", 500);
     }
+    const refund = async () => {
+      await admin.rpc("refund_credits", { _user_id: user.id, _amount: COST });
+    };
 
     // 5. Build prompt (exact system prompt from spec)
     const profile = project.profile_data as Record<string, string>;
@@ -127,6 +130,7 @@ Return ONLY a JSON array sorted by total descending, each: { name, scores: {pain
     if (!geminiRes.ok) {
       const body = await geminiRes.text();
       console.error("Gemini error:", geminiRes.status, body);
+      await refund();
       return fail(`AI error ${geminiRes.status} — try again.`, 502);
     }
 
@@ -134,14 +138,12 @@ Return ONLY a JSON array sorted by total descending, each: { name, scores: {pain
     const rawText: string =
       geminiJson.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 
-    // 7. Parse JSON safely.
-    // responseMimeType/responseSchema are set, but providers can still return
-    // fenced JSON, an object wrapper, or number strings. Normalize before saving.
     let scored: ScoredIdea[];
     try {
       scored = normalizeScoredIdeas(parseJsonFromModel(rawText));
     } catch (parseErr) {
       console.error("JSON parse failed:", parseErr, "| Raw (first 500):", rawText.slice(0, 500));
+      await refund();
       return fail("AI returned invalid JSON — try again.", 502);
     }
 
@@ -149,14 +151,7 @@ Return ONLY a JSON array sorted by total descending, each: { name, scores: {pain
     scored.sort((a, b) => b.total - a.total);
     scored = scored.map((idea, index) => ({ ...idea, rank: index + 1 }));
 
-    // 8. Deduct credits (only reached on successful parse)
-    const { error: deductErr } = await admin
-      .from("profiles")
-      .update({ credits: prof.credits - COST })
-      .eq("id", user.id);
-    if (deductErr) return fail("Could not deduct credits", 500);
-
-    // 9. Audit log
+    // Audit log (service role bypasses RLS)
     await admin.from("credit_usage").insert({
       user_id: user.id,
       project_id: projectId,
