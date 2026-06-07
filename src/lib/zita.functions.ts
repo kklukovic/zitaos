@@ -190,8 +190,11 @@ Generate 5-7 practical digital tool ideas.`;
       },
     };
 
-    const result = (await callAI({ system, user, tool })) as { ideas: Idea[] };
-    await context.supabase.from("projects").update({ ideas: result.ideas as never, status: "discover" }).eq("id", data.projectId);
+    const result = await withRefundOnFailure(context.userId, "discover", async () => {
+      const r = (await callAI({ system, user, tool })) as { ideas: Idea[] };
+      await context.supabase.from("projects").update({ ideas: r.ideas as never, status: "discover" }).eq("id", data.projectId);
+      return r;
+    });
     return { ideas: result.ideas };
   });
 
