@@ -1,9 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Plus, ArrowRight, Sparkles, Target, Zap, FileCode, Rocket, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { CREDIT_COSTS, PROJECT_TOTAL_CREDITS } from "@/lib/credit-costs";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
@@ -18,7 +22,11 @@ const statusMeta: Record<string, { label: string; icon: any; tone: string }> = {
   completed: { label: "Completed", icon: CheckCircle2, tone: "text-success" },
 };
 
+const COST_HINT = `Discover ${CREDIT_COSTS.discover} · Score ${CREDIT_COSTS.score} · Blueprint ${CREDIT_COSTS.blueprint} · Launch ${CREDIT_COSTS.launch}`;
+
 function Dashboard() {
+  const qc = useQueryClient();
+
   const { data: profile } = useQuery({
     queryKey: ["profile"],
     queryFn: async () => (await supabase.from("profiles").select("*").single()).data,
@@ -27,6 +35,8 @@ function Dashboard() {
     queryKey: ["projects"],
     queryFn: async () => (await supabase.from("projects").select("id,name,status,updated_at").order("updated_at", { ascending: false }).limit(6)).data ?? [],
   });
+
+  const refreshProjects = () => qc.invalidateQueries({ queryKey: ["projects"] });
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
@@ -44,7 +54,7 @@ function Dashboard() {
       <div className="mt-8 grid gap-4 md:grid-cols-3">
         <StatCard label="Credits" value={String(profile?.credits ?? 0)} hint={`Founder tier — ${profile?.founder_tier ?? "founder_47"}`} />
         <StatCard label="Projects" value={String(projects?.length ?? 0)} hint="Recent activity" />
-        <StatCard label="Cost per project" value="~30 cr" hint="Discover 8 · Score 4 · Blueprint 10 · Launch 8" />
+        <StatCard label="Cost per project" value={`~${PROJECT_TOTAL_CREDITS} cr`} hint={COST_HINT} />
       </div>
 
       <div className="mt-10">
@@ -57,17 +67,24 @@ function Dashboard() {
             {projects.map((p) => {
               const m = statusMeta[p.status] ?? statusMeta.profile;
               return (
-                <Link key={p.id} to="/project/$id" params={{ id: p.id }} className="group rounded-xl border border-border bg-card p-5 shadow-card transition-colors hover:border-primary/50">
+                <div key={p.id} className="group relative rounded-xl border border-border bg-card p-5 shadow-card transition-colors hover:border-primary/50">
                   <div className="flex items-start justify-between">
-                    <div>
-                      <div className="font-semibold group-hover:text-primary">{p.name}</div>
+                    <div className="min-w-0 flex-1 pr-3">
+                      <InlineProjectName project={p} onRenamed={refreshProjects} />
                       <div className="mt-1 text-xs text-muted-foreground">Updated {new Date(p.updated_at).toLocaleDateString()}</div>
                     </div>
-                    <div className={cn("flex items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-xs", m.tone)}>
+                    <div className={cn("flex shrink-0 items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-xs", m.tone)}>
                       <m.icon className="h-3 w-3" />{m.label}
                     </div>
                   </div>
-                </Link>
+                  {/* Full-card link sits behind the name editor */}
+                  <Link
+                    to="/project/$id"
+                    params={{ id: p.id }}
+                    className="absolute inset-0 rounded-xl"
+                    aria-label={`Open project ${p.name}`}
+                  />
+                </div>
               );
             })}
           </div>
@@ -82,6 +99,55 @@ function Dashboard() {
         )}
       </div>
     </div>
+  );
+}
+
+function InlineProjectName({ project, onRenamed }: { project: { id: string; name: string }; onRenamed: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(project.name);
+  useEffect(() => setName(project.name), [project.name]);
+
+  const save = async () => {
+    setEditing(false);
+    const trimmed = name.trim() || "Untitled Project";
+    if (trimmed === project.name) return;
+    const { error } = await supabase
+      .from("projects")
+      .update({ name: trimmed, updated_at: new Date().toISOString() })
+      .eq("id", project.id);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Renamed");
+    onRenamed();
+  };
+
+  if (editing) {
+    return (
+      <Input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={save}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+          if (e.key === "Escape") { setName(project.name); setEditing(false); }
+        }}
+        className="relative z-10 h-7 text-sm font-semibold"
+      />
+    );
+  }
+
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditing(true); }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditing(true); } }}
+      className="relative z-10 block cursor-text truncate font-semibold group-hover:text-primary"
+      title="Click to rename"
+    >
+      {project.name}
+    </span>
   );
 }
 

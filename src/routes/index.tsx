@@ -32,12 +32,12 @@ const steps = [
   {
     icon: Sparkles,
     label: "Discover",
-    desc: "Fast AI mode or paste your own research. ZITA surfaces 5-7 evidence-led app ideas matched to your audience and skills.",
+    desc: "Three modes: Personalized, Surprise Me, or Validate My Idea. ZITA researches real online discussions and returns 10 evidence-backed ideas with sources, engagement signals, and an honest verdict on each.",
   },
   {
     icon: Zap,
     label: "Score",
-    desc: "Each idea is ranked across 6 dimensions: market size, competition, buildability, monetization potential, and more. Pick your winner with confidence, not guesswork.",
+    desc: "Every idea is scored across 5 dimensions — pain, willingness to pay, simplicity, retention, and fit — then ranked by total score out of 50. You pick your winner with data, not guesswork.",
   },
   {
     icon: FileCode,
@@ -132,9 +132,13 @@ const faqs = [
   },
   {
     q: "What if I already have an idea?",
-    a: "Skip to Step 3, Score. Validate your existing idea before you build it. Most people are surprised by what the scoring reveals.",
+    a: "Use Validate My Idea mode in Step 2. Describe your rough idea and ZITA researches it, then returns stronger, evidence-backed variants and adjacent angles before you spend a single hour building.",
   },
 ];
+
+// ── Video config — paste the YouTube/Vimeo embed URL when the videos are ready ──
+const VIDEO_WHAT_IS_ZITA = ""; // e.g. "https://www.youtube.com/embed/VIDEO_ID"
+const VIDEO_FULL_DEMO    = ""; // e.g. "https://www.youtube.com/embed/VIDEO_ID"
 
 function CtaButton({ label = "Get Founder Access - $97", large = false }: { label?: string; large?: boolean }) {
   return (
@@ -146,6 +150,44 @@ function CtaButton({ label = "Get Founder Access - $97", large = false }: { labe
     >
       {label} <ArrowRight className="h-4 w-4" />
     </a>
+  );
+}
+
+function VideoPlaceholder({ label, src }: { label: string; src?: string }) {
+  return (
+    <div
+      className="relative w-full overflow-hidden rounded-[10px]"
+      style={{ aspectRatio: "16/9", background: "#111", border: "1px solid #2A2A2A" }}
+    >
+      {src ? (
+        <iframe
+          src={src}
+          className="absolute inset-0 h-full w-full"
+          allow="autoplay; fullscreen; picture-in-picture"
+          allowFullScreen
+          title={label}
+        />
+      ) : (
+        <div className="flex h-full flex-col items-center justify-center gap-3">
+          <div
+            className="grid h-14 w-14 place-items-center rounded-full"
+            style={{ background: "rgba(245,166,35,0.12)", border: "1px solid rgba(245,166,35,0.3)" }}
+          >
+            <div
+              className="ml-1"
+              style={{
+                width: 0,
+                height: 0,
+                borderTop: "10px solid transparent",
+                borderBottom: "10px solid transparent",
+                borderLeft: "18px solid #F5A623",
+              }}
+            />
+          </div>
+          <p className="text-sm text-[#707070]">{label}</p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -190,6 +232,9 @@ function Landing() {
         <p className="mx-auto mt-6 max-w-2xl text-lg text-[#D4D4D4]">
           ZITA OS is a guided 5-step system that takes you from zero idea to a validated, blueprinted, launch-ready app in one sitting. No guessing. No wasted builds. No dev bills.
         </p>
+        <div className="mx-auto mt-8 w-full max-w-2xl">
+          <VideoPlaceholder label="Watch: What is ZITA OS (90 seconds)" src={VIDEO_WHAT_IS_ZITA} />
+        </div>
         <div className="mt-8 flex flex-col items-center gap-3">
           <CtaButton label="Get Instant Access - $97" large />
           <p className="text-xs text-[#707070]">One-time payment. Lifetime access. No subscription.</p>
@@ -310,6 +355,11 @@ function Landing() {
         </div>
       </section>
 
+      {/* DEMO VIDEO */}
+      <section className="mx-auto max-w-5xl px-6 pb-4">
+        <VideoPlaceholder label="Watch the full demo (3 minutes)" src={VIDEO_FULL_DEMO} />
+      </section>
+
       {/* FIVE STEPS */}
       <section className="mx-auto max-w-6xl px-6 py-16">
         <h2 className="text-center text-3xl font-extrabold uppercase tracking-[0.05em] text-white">Five steps. One sitting.</h2>
@@ -400,7 +450,10 @@ function Landing() {
               </li>
             ))}
           </ul>
-          <div className="mt-8">
+          <p className="mx-auto mt-5 max-w-sm text-xs text-[#707070] text-left">
+            Early founders are getting in below $97 with limited coupon codes. Once founder spots are gone, this price is firm.
+          </p>
+          <div className="mt-6">
             <CtaButton large />
           </div>
           <p className="mt-3 text-xs text-[#707070]">
@@ -427,7 +480,10 @@ function Landing() {
               No hoops. No questions. The only condition: you actually use it.
             </p>
           </div>
-          <p className="mt-6 text-sm font-semibold text-[#F5A623]">Kreso, Founder of ZITA OS</p>
+          <div className="mt-6 rounded-[6px] border border-[#2A2A2A] bg-[#0D0D0D] p-4 text-sm text-[#707070] leading-relaxed">
+            ZITA OS is built by a solo founder with 25 years in online business who has shipped 30+ apps this year — including software sold to real paying business clients. This isn't theory. It's the exact system I use myself.
+          </div>
+          <p className="mt-4 text-sm font-semibold text-[#F5A623]">Kreso, Founder of ZITA OS</p>
         </div>
       </section>
 

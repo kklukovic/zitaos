@@ -62,7 +62,7 @@ function Library() {
       <div>
         <div className="text-xs uppercase tracking-widest text-primary">Growth Library</div>
         <h1 className="mt-1 text-3xl font-bold">Prompts, templates, checklists</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Live Reddit + YouTube research is coming. Until then, these prompts let you mine the same data manually in minutes.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Built-in research is live in every project. Use these prompts and templates when you want to go deeper, validate manually, or mine a niche ZITA hasn't covered yet.</p>
       </div>
 
       <div className="mt-8 space-y-6">

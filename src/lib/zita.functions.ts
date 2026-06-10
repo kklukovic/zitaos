@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { CREDIT_COSTS } from "./credit-costs";
 
 export type Idea = {
   name: string;
@@ -39,7 +40,7 @@ export type ScoredIdea = {
 const AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const DEFAULT_MODEL = "google/gemini-3-flash-preview";
 
-const COSTS = { discover: 8, score: 4, blueprint: 10, launch: 8 } as const;
+const COSTS = CREDIT_COSTS;
 type Action = keyof typeof COSTS;
 
 async function callAI(opts: {

@@ -472,9 +472,10 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
   };
 
   const chooseIdea = async (idea: ResearchedIdea) => {
+    const autoName = project.name === "Untitled Project" ? { name: idea.name } : {};
     const { error } = await supabase
       .from("projects")
-      .update({ chosen_idea: idea as never, status: "score", updated_at: new Date().toISOString() })
+      .update({ chosen_idea: idea as never, status: "score", updated_at: new Date().toISOString(), ...autoName })
       .eq("id", project.id);
     if (error) { toast.error(error.message); return; }
     setChosen(idea.name);
@@ -872,12 +873,14 @@ function ScorePanel({ project, onSaved }: { project: any; onSaved: (next: Status
   const { savedNames, save: saveForLater } = useSavedIdeas(project.id);
 
   const choose = async (idea: ResearchedIdea) => {
+    const autoName = project.name === "Untitled Project" ? { name: idea.name } : {};
     const { error } = await supabase
       .from("projects")
       .update({
         chosen_idea: idea as never,
         status: "blueprint",
         updated_at: new Date().toISOString(),
+        ...autoName,
       })
       .eq("id", project.id);
     if (error) { toast.error(error.message); return; }
