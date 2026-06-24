@@ -139,6 +139,7 @@ const faqs = [
 // ── Video config — paste the YouTube/Vimeo embed URL when the videos are ready ──
 const VIDEO_WHAT_IS_ZITA = ""; // e.g. "https://www.youtube.com/embed/VIDEO_ID"
 const VIDEO_FULL_DEMO    = ""; // e.g. "https://www.youtube.com/embed/VIDEO_ID"
+const SHOW_VIDEO_PLACEHOLDERS = false; // temporarily hidden
 
 function CtaButton({ label = "Get Founder Access - $97", large = false }: { label?: string; large?: boolean }) {
   return (
