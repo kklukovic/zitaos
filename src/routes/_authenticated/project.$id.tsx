@@ -940,10 +940,12 @@ function BlueprintPanel({ project, onSaved }: { project: any; onSaved: (next: St
   const existingMd = (project.blueprint_markdown as string | null) ?? null;
   const autoRun = !existingMd;
   const didAutoRun = useRef(false);
+  const qc = useQueryClient();
 
   const [md, setMd] = useState<string | null>(existingMd);
   const [running, setRunning] = useState(autoRun);
   const [blueprintError, setBlueprintError] = useState<string | null>(null);
+
 
   const run = async () => {
     setRunning(true);
@@ -963,7 +965,9 @@ function BlueprintPanel({ project, onSaved }: { project: any; onSaved: (next: St
       if (data?.error) throw new Error(data.error);
       if (typeof data?.markdown !== "string") throw new Error("Unexpected response from generate-blueprint — try again.");
       setMd(data.markdown);
+      qc.invalidateQueries({ queryKey: ["project", project.id] });
       toast.success("Blueprint generated!");
+
     } catch (err: any) {
       const msg = err?.message ?? "Blueprint generation failed — try again.";
       console.error("generate-blueprint error:", err);
@@ -1215,11 +1219,13 @@ function LaunchPanel({ project, onSaved }: { project: any; onSaved: (next: Statu
   const existingMd = (project.launch_kit_markdown as string | null) ?? null;
   const autoRun = !existingMd;
   const didAutoRun = useRef(false);
+  const qc = useQueryClient();
 
   const [md, setMd] = useState<string | null>(existingMd);
   const [running, setRunning] = useState(autoRun);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
+
 
   const run = async () => {
     setRunning(true);
@@ -1239,7 +1245,9 @@ function LaunchPanel({ project, onSaved }: { project: any; onSaved: (next: Statu
       if (data?.error) throw new Error(data.error);
       if (typeof data?.markdown !== "string") throw new Error("Unexpected response from generate-launch — try again.");
       setMd(data.markdown);
+      qc.invalidateQueries({ queryKey: ["project", project.id] });
       toast.success("Launch kit generated!");
+
     } catch (err: any) {
       const msg = err?.message ?? "Launch kit generation failed — try again.";
       console.error("generate-launch error:", err);
