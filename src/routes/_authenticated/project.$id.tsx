@@ -940,10 +940,12 @@ function BlueprintPanel({ project, onSaved }: { project: any; onSaved: (next: St
   const existingMd = (project.blueprint_markdown as string | null) ?? null;
   const autoRun = !existingMd;
   const didAutoRun = useRef(false);
+  const qc = useQueryClient();
 
   const [md, setMd] = useState<string | null>(existingMd);
   const [running, setRunning] = useState(autoRun);
   const [blueprintError, setBlueprintError] = useState<string | null>(null);
+
 
   const run = async () => {
     setRunning(true);
