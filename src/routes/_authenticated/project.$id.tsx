@@ -965,7 +965,9 @@ function BlueprintPanel({ project, onSaved }: { project: any; onSaved: (next: St
       if (data?.error) throw new Error(data.error);
       if (typeof data?.markdown !== "string") throw new Error("Unexpected response from generate-blueprint — try again.");
       setMd(data.markdown);
+      qc.invalidateQueries({ queryKey: ["project", project.id] });
       toast.success("Blueprint generated!");
+
     } catch (err: any) {
       const msg = err?.message ?? "Blueprint generation failed — try again.";
       console.error("generate-blueprint error:", err);
