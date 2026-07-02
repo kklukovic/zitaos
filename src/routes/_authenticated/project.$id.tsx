@@ -1219,11 +1219,13 @@ function LaunchPanel({ project, onSaved }: { project: any; onSaved: (next: Statu
   const existingMd = (project.launch_kit_markdown as string | null) ?? null;
   const autoRun = !existingMd;
   const didAutoRun = useRef(false);
+  const qc = useQueryClient();
 
   const [md, setMd] = useState<string | null>(existingMd);
   const [running, setRunning] = useState(autoRun);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
+
 
   const run = async () => {
     setRunning(true);
