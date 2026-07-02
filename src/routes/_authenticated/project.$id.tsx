@@ -1245,7 +1245,9 @@ function LaunchPanel({ project, onSaved }: { project: any; onSaved: (next: Statu
       if (data?.error) throw new Error(data.error);
       if (typeof data?.markdown !== "string") throw new Error("Unexpected response from generate-launch — try again.");
       setMd(data.markdown);
+      qc.invalidateQueries({ queryKey: ["project", project.id] });
       toast.success("Launch kit generated!");
+
     } catch (err: any) {
       const msg = err?.message ?? "Launch kit generation failed — try again.";
       console.error("generate-launch error:", err);
