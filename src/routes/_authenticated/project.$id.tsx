@@ -492,22 +492,22 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
   };
 
   return (
-    <div className="space-y-5 rounded-xl border border-border bg-card p-6 shadow-card">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold">Step 2 — Discover Ideas</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Live web research finds real complaints, paid workarounds, and verifiable buying signals.
-          </p>
-        </div>
-        {ideas && !running && (
-          <Button variant="outline" size="sm" onClick={() => run(true)} disabled={running}>
-            <RefreshCw className="h-3.5 w-3.5" />
-            Re-research (10 credits)
-          </Button>
-        )}
-      </div>
+    <div className="card-premium space-y-6 p-8">
+      <PanelHeader
+        stepNumber={2}
+        title="Ideas"
+        accent="Discover"
+        subtitle="ZITA analyzes your brief and finds real, painful problems — with market evidence, paid workarounds, and buying signals."
+        actions={
+          ideas && !running ? (
+            <Button variant="outline" size="sm" onClick={() => run(true)} disabled={running}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Re-research (10 credits)
+            </Button>
+          ) : undefined
+        }
+      />
+
 
       {/* Mode selector */}
       {!ideas && !running && (
