@@ -905,13 +905,14 @@ function ScorePanel({ project, onSaved }: { project: any; onSaved: (next: Status
   };
 
   return (
-    <div className="space-y-5 rounded-xl border border-border bg-card p-6 shadow-card">
-      <div>
-        <h2 className="text-lg font-semibold">Step 3 — Score & Rank</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Ideas are ranked by buying likelihood, with pain, willingness to pay, simplicity, retention, and fit as supporting scores.
-        </p>
-      </div>
+    <div className="card-premium space-y-6 p-8">
+      <PanelHeader
+        stepNumber={3}
+        title="& Rank"
+        accent="Score"
+        subtitle="Detailed analysis of every idea across pain, willingness to pay, simplicity, retention, and fit — ranked by buying likelihood."
+      />
+
 
       {ranked.length === 0 ? (
         <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
