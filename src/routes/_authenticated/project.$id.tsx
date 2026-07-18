@@ -284,6 +284,7 @@ function ProfilePanel({ project, onSaved }: { project: any; onSaved: (next: Stat
         </Button>
         {!complete && <span className="text-xs text-muted-foreground">All three answers are required.</span>}
       </div>
+      </div>
     </div>
   );
 }
