@@ -20,7 +20,7 @@ export const Route = createFileRoute("/_authenticated/project/$id")({
 
 type Status = "profile" | "discover" | "score" | "blueprint" | "launch" | "completed";
 const STEPS: { key: Status; label: string; icon: any; desc: string }[] = [
-  { key: "profile", label: "Brief", icon: Target, desc: "Set your skills, audience, price, and shipping constraints." },
+  { key: "profile", label: "Brief", icon: Target, desc: "Set your audience, shipping timeframe, and customer type." },
   { key: "discover", label: "Discover", icon: Sparkles, desc: "Find real, painful problems worth solving." },
   { key: "score", label: "Score", icon: Zap, desc: "Rank ideas across 6 dimensions." },
   { key: "blueprint", label: "Blueprint", icon: FileCode, desc: "Generate the build spec for your tool." },
@@ -165,16 +165,13 @@ function StepBar({ active, reached, status, onPick }: { active: Status; reached:
 }
 
 // ---------- Step 1: Research brief ----------
-const PRICE_RANGES = ["€50 one-time", "€500 build", "€100/month"];
 const SHIP_TIMES = ["A few days", "1 week", "2–4 weeks"];
 const CUSTOMER_TYPES = ["B2B", "B2C", "Creators / solopreneurs"];
 
 function ProfilePanel({ project, onSaved }: { project: any; onSaved: (next: Status) => void }) {
   const existing = (project.profile_data ?? {}) as Record<string, string>;
   const [form, setForm] = useState({
-    build_capabilities: existing.build_capabilities ?? existing.expertise ?? "",
     niche_audience: existing.niche_audience ?? existing.audience ?? existing.niche ?? "",
-    price_range: existing.price_range ?? "",
     ship_time: existing.ship_time ?? "",
     customer_type: existing.customer_type ?? "",
   });
@@ -195,7 +192,7 @@ function ProfilePanel({ project, onSaved }: { project: any; onSaved: (next: Stat
 
   const handleSave = async () => {
     if (!complete) {
-      toast.error("Please answer all five questions before continuing.");
+      toast.error("Please answer all three questions before continuing.");
       return;
     }
     if (await persist()) {
@@ -209,20 +206,11 @@ function ProfilePanel({ project, onSaved }: { project: any; onSaved: (next: Stat
       <div>
         <h2 className="text-lg font-semibold">Step 1 — Your Research Brief</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Answer these five questions first. ZITA will use them to research products people are already asking and paying for.
+          The more specific you are with your answers, the better and more relevant app ideas ZITA will be able to find for you.
         </p>
       </div>
 
-      <Field label="1. What skills or tools can you build with?">
-        <Textarea
-          rows={3}
-          value={form.build_capabilities}
-          onChange={(e) => setForm({ ...form, build_capabilities: e.target.value })}
-          placeholder="e.g. AI tools, automations, web apps, no-code"
-        />
-      </Field>
-
-      <Field label="2. Which niche or audience do you know best or want to serve?">
+      <Field label="Which niche or audience do you want to serve?">
         <Textarea
           rows={3}
           value={form.niche_audience}
@@ -231,24 +219,15 @@ function ProfilePanel({ project, onSaved }: { project: any; onSaved: (next: Stat
         />
       </Field>
 
-      <ChoiceWithCustomInput
-        label="3. What price range do you want to sell at?"
-        value={form.price_range}
-        options={PRICE_RANGES}
-        placeholder="Or enter your own price / range…"
-        onChange={(value) => setForm({ ...form, price_range: value })}
-      />
-
-      <ChoiceWithCustomInput
-        label="4. How fast do you need to ship?"
+      <RadioGroup
+        label="How fast do you need to ship?"
         value={form.ship_time}
         options={SHIP_TIMES}
-        placeholder="Or enter your timeframe…"
         onChange={(value) => setForm({ ...form, ship_time: value })}
       />
 
       <RadioGroup
-        label="5. Do you want B2B, B2C, or creators / solopreneurs?"
+        label="Do you want B2B, B2C, or creators / solopreneurs?"
         value={form.customer_type}
         options={CUSTOMER_TYPES}
         onChange={(value) => setForm({ ...form, customer_type: value })}
@@ -259,7 +238,7 @@ function ProfilePanel({ project, onSaved }: { project: any; onSaved: (next: Stat
           {saving && <Loader2 className="h-4 w-4 animate-spin" />}
           Save answers & Continue <ArrowRight className="h-4 w-4" />
         </Button>
-        {!complete && <span className="text-xs text-muted-foreground">All five answers are required.</span>}
+        {!complete && <span className="text-xs text-muted-foreground">All three answers are required.</span>}
       </div>
     </div>
   );
@@ -299,32 +278,6 @@ function RadioGroup({ label, value, options, onChange }: { label: string; value:
   );
 }
 
-function ChoiceWithCustomInput({
-  label,
-  value,
-  options,
-  placeholder,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: string[];
-  placeholder: string;
-  onChange: (value: string) => void;
-}) {
-  const isPreset = options.includes(value);
-  return (
-    <div className="space-y-2">
-      <RadioGroup label={label} value={value} options={options} onChange={onChange} />
-      <Input
-        value={isPreset ? "" : value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-      />
-    </div>
-  );
-}
-
 // ---------- Step 2: Discover ----------
 
 type DiscoverMode = "personalized" | "surprise" | "validate";
@@ -348,11 +301,9 @@ const DISCOVER_MODES: { key: DiscoverMode; title: string; desc: string }[] = [
 ];
 
 const LOADING_STEPS = [
-  "Searching Reddit and Indie Hackers complaints...",
-  "Checking X posts for repeated pain...",
-  "Finding paid manual work on Upwork and Fiverr...",
-  "Verifying sources and buying signals...",
-  "Ranking ideas by likelihood to pay...",
+  "Researching real market demand...",
+  "Finding problems people are already paying to solve...",
+  "Ranking the strongest opportunities...",
 ];
 
 type SourceLink = { url: string; title: string; platform: string; engagement?: string };
@@ -586,7 +537,7 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            This can take 30–90 seconds — web research takes time.
+            This can take up to 90 seconds.
           </p>
         </div>
       )}
@@ -1054,10 +1005,6 @@ function BlueprintPanel({ project, onSaved }: { project: any; onSaved: (next: St
               <Copy className="h-3.5 w-3.5" />
               Copy Blueprint
             </Button>
-            <Button variant="outline" size="sm" onClick={copyBuildPrompt}>
-              <Copy className="h-3.5 w-3.5" />
-              Copy Build Prompt
-            </Button>
             <Button variant="outline" size="sm" onClick={download}>
               <Download className="h-3.5 w-3.5" />
               Download .md
@@ -1101,7 +1048,28 @@ function BlueprintPanel({ project, onSaved }: { project: any; onSaved: (next: St
       {md && !running && (
         <div className="space-y-4">
           <div className="rounded-lg border border-border bg-background p-6">
-            <MarkdownView md={md} />
+            <MarkdownView md={md} onCopyLovablePrompt={copyBuildPrompt} />
+            <div className="mt-6 rounded-lg border border-primary/25 bg-primary/5 p-4">
+              <h3 className="font-semibold text-foreground">How to use this prompt in Lovable:</h3>
+              <ol className="mt-3 ml-5 list-decimal space-y-1.5 text-sm text-foreground/90">
+                <li>Copy the entire Lovable prompt above.</li>
+                <li>
+                  Go to{" "}
+                  <a
+                    href="https://lovable.dev"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 font-medium text-primary underline-offset-2 hover:underline"
+                  >
+                    Lovable <ExternalLink className="h-3 w-3" />
+                  </a>
+                  .
+                </li>
+                <li>Create a new project and paste the prompt.</li>
+                <li>When Lovable asks, connect your <strong>Supabase</strong> project.</li>
+                <li>Click <strong>Generate</strong> and let Lovable build the app.</li>
+              </ol>
+            </div>
           </div>
           <div className="flex items-center gap-3 border-t border-border pt-4">
             <Button onClick={goToLaunch} className="bg-gradient-electric text-primary-foreground shadow-glow">
@@ -1114,7 +1082,7 @@ function BlueprintPanel({ project, onSaved }: { project: any; onSaved: (next: St
   );
 }
 
-function MarkdownView({ md }: { md: string }) {
+function MarkdownView({ md, onCopyLovablePrompt }: { md: string; onCopyLovablePrompt?: () => void }) {
   const lines = md.split("\n");
   const nodes: React.ReactNode[] = [];
   let i = 0;
@@ -1141,11 +1109,22 @@ function MarkdownView({ md }: { md: string }) {
     } else if (line.startsWith("## ")) {
       const headText = line.slice(3);
       const headId = headText.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      nodes.push(
+      const isLovablePrompt = headText.trim().toLowerCase() === "lovable build prompt";
+      nodes.push(isLovablePrompt && onCopyLovablePrompt ? (
+        <div key={i} className="mb-2 mt-7 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2">
+          <h2 id={headId} className="scroll-mt-4 text-base font-semibold text-foreground">
+            {parseLine(headText)}
+          </h2>
+          <Button type="button" variant="outline" size="sm" onClick={onCopyLovablePrompt}>
+            <Copy className="h-3.5 w-3.5" />
+            Copy PRD for Lovable
+          </Button>
+        </div>
+      ) : (
         <h2 key={i} id={headId} className="mb-2 mt-7 scroll-mt-4 border-b border-border pb-1.5 text-base font-semibold text-foreground first:mt-0">
           {parseLine(headText)}
-        </h2>,
-      );
+        </h2>
+      ));
       i++;
     } else if (line.startsWith("### ")) {
       nodes.push(

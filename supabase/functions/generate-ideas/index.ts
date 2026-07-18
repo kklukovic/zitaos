@@ -237,9 +237,7 @@ function profileStr(profile: Record<string, string>): string {
   const has = Object.values(profile).some((v) => v?.trim());
   if (!has) return "No user profile provided — generate ideas broadly.";
   return `USER PROFILE:
-- Build skills and tools: ${profile.build_capabilities || profile.expertise || "not specified"}
 - Niche or audience: ${profile.niche_audience || profile.audience || profile.niche || "not specified"}
-- Target price range: ${profile.price_range || "not specified"}
 - Shipping timeframe: ${profile.ship_time || profile.time_per_week || "not specified"}
 - Customer type: ${profile.customer_type || "not specified"}`;
 }
@@ -251,7 +249,7 @@ function buildStage1(
 ): { system: string; prompt: string } {
   const taskInstr =
     mode === "personalized"
-      ? `Find 5-7 specific app or digital-tool opportunities tailored to the user's niche, audience, price, and shipping constraints.`
+      ? `Find 5-7 specific app or digital-tool opportunities tailored to the user's niche, audience, customer type, and shipping constraints.`
       : mode === "surprise"
       ? `Find 5-7 diverse, specific app or digital-tool opportunities across niches. Every opportunity still needs verifiable complaint and buying evidence.`
       : `The user has this rough idea: "${roughIdea}"
@@ -317,7 +315,7 @@ function buildStage2(
 ): { system: string; prompt: string } {
   const has = Object.values(profile).some((v) => v?.trim());
   const founderCtx = has
-    ? `capabilities=${profile.build_capabilities || profile.expertise || "?"}, niche/audience=${profile.niche_audience || profile.audience || profile.niche || "?"}, price=${profile.price_range || "?"}, ship_time=${profile.ship_time || profile.time_per_week || "?"}, customer_type=${profile.customer_type || "?"}`
+    ? `niche/audience=${profile.niche_audience || profile.audience || profile.niche || "?"}, ship_time=${profile.ship_time || profile.time_per_week || "?"}, customer_type=${profile.customer_type || "?"}`
     : "no profile — score fit neutrally";
 
   const system =

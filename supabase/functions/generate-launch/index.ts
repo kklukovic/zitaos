@@ -72,7 +72,7 @@ Deno.serve(async (req: Request) => {
     const prompt =
       `You are a launch strategist for a solo founder using build-in-public + founder pricing.
 PROJECT: tool ${idea.name}, promise ${idea.promise}, target ${idea.target_user}, monetization ${idea.monetization_angle}.
-FOUNDER: niche/audience ${profile.niche_audience || profile.audience || profile.niche}, customer type ${profile.customer_type}, target price ${profile.price_range}, shipping timeframe ${profile.ship_time || profile.time_per_week}, solo organic reach on Facebook + LinkedIn + X.
+FOUNDER: niche/audience ${profile.niche_audience || profile.audience || profile.niche}, customer type ${profile.customer_type}, shipping timeframe ${profile.ship_time || profile.time_per_week}, solo organic reach on Facebook + LinkedIn + X.
 BLUEPRINT CONTEXT (first 1200 chars): ${blueprintSummary}
 
 Output Markdown sections:
