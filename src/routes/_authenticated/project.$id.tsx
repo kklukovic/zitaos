@@ -362,8 +362,12 @@ type ResearchedIdea = {
   core_problem: string;
   pain_in_buyers_words?: string;
   evidence_summary: string;
+  pain_source?: string;
   source_links: SourceLink[];
   strongest_signal: string;
+  paid_workaround?: string;
+  buying_signal?: string;
+  // Legacy fields retained so previously cached ideas remain readable.
   current_workaround?: string;
   payment_proof?: string;
   estimated_willingness_to_pay?: string;
@@ -441,6 +445,8 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
   const run = async (isRegen = false) => {
     setRunning(true);
     setDiscoverError(null);
+    setIdeas(null);
+    setExpanded(null);
     setLoadingStepIdx(0);
     try {
       const { data, error } = await supabase.functions.invoke("generate-ideas", {
@@ -604,7 +610,7 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
       )}
 
       {/* Ideas list */}
-      {ideas && !running && (
+      {ideas && !running && !discoverError && (
         <div className="space-y-3">
           <p className="text-xs uppercase tracking-wider text-muted-foreground">
             {ideas.length} ideas researched
@@ -670,6 +676,8 @@ function ResearchIdeaCard({
   const isWeak = strength === "Weak";
   const total = totalScore(idea.scores);
   const totalColor = total >= 40 ? "text-green-500" : total >= 30 ? "text-yellow-500" : "text-muted-foreground";
+  const paidWorkaround = idea.paid_workaround ?? idea.current_workaround;
+  const buyingSignal = idea.buying_signal ?? idea.payment_proof;
 
   return (
     <div
@@ -742,6 +750,7 @@ function ResearchIdeaCard({
         <div className="space-y-4 border-t border-border px-4 py-4 text-sm">
           {idea.pain_in_buyers_words && <IdeaDetail label="Pain in the buyer's words" value={idea.pain_in_buyers_words} />}
           <IdeaDetail label="Evidence summary" value={idea.evidence_summary} />
+          {idea.pain_source && <IdeaDetail label="Where this pain is discussed" value={idea.pain_source} />}
 
           {idea.source_links && idea.source_links.length > 0 && (
             <div>
@@ -770,10 +779,10 @@ function ResearchIdeaCard({
           )}
 
           <IdeaDetail label="Strongest signal" value={idea.strongest_signal} />
-          {idea.current_workaround && <IdeaDetail label="How they solve it today" value={idea.current_workaround} />}
+          {paidWorkaround && <IdeaDetail label="Paid tool or manual workaround" value={paidWorkaround} />}
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {idea.payment_proof && <IdeaDetail label="Proof people already pay" value={idea.payment_proof} />}
+            {buyingSignal && <IdeaDetail label="Why this audience pays" value={buyingSignal} />}
             {idea.estimated_willingness_to_pay && <IdeaDetail label="Estimated willingness to pay" value={idea.estimated_willingness_to_pay} />}
           </div>
 

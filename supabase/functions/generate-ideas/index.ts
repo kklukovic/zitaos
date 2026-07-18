@@ -120,7 +120,7 @@ Deno.serve(async (req: Request) => {
     try {
       let raw = s2Result.text.trim();
 
-      // 1. Strip markdown code fences if present
+      // 1. Strip ```json ... ``` (or unlabelled) markdown fences if present.
       const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
       if (fenced) raw = fenced[1].trim();
 
@@ -141,7 +141,7 @@ Deno.serve(async (req: Request) => {
       if (!Array.isArray(ideas)) throw new Error("not an array");
     } catch (e) {
       console.error(
-        "JSON parse failed:",
+        "[generate-ideas] RAW_PARSE_FAIL:",
         e instanceof Error ? e.message : String(e),
         "| provider:", s2Result.provider,
         "| model:", s2Result.model,
@@ -168,13 +168,23 @@ Deno.serve(async (req: Request) => {
             )
           : [];
         const buyingLikelihood = Math.max(1, Math.min(10, Math.round(Number(idea.buying_likelihood) || 1)));
-        return { ...idea, source_links: sourceLinks, buying_likelihood: buyingLikelihood };
+        const buyingSignal = typeof idea.buying_signal === "string"
+          ? idea.buying_signal.trim()
+          : typeof idea.payment_proof === "string"
+          ? idea.payment_proof.trim()
+          : "";
+        return {
+          ...idea,
+          source_links: sourceLinks,
+          buying_likelihood: buyingLikelihood,
+          buying_signal: buyingSignal,
+        };
       })
       .filter(
         (idea) =>
           idea.source_links.length > 0 &&
-          typeof idea.payment_proof === "string" &&
-          idea.payment_proof.trim().length > 0,
+          typeof idea.buying_signal === "string" &&
+          idea.buying_signal.trim().length > 0,
       );
 
     if (verifiedIdeas.length === 0) {
@@ -270,7 +280,9 @@ NON-NEGOTIABLE:
 - A real source means a specific, accessible page URL — not a subreddit homepage, search-results page, or fabricated representative title.
 - Paraphrase when exact wording is uncertain. Use quotation marks only for wording visible in the source.
 - Return fewer ideas when evidence is thin. Never pad the result with generic, broad, or weakly matched ideas.
-- Audience-agnostic ideas are banned. Reject an idea if its target audience could be replaced with an unrelated audience without materially changing the product, workflow, or positioning. Retain it only after rewriting its core function to make sense specifically for this niche's workflow.`;
+- Audience-agnostic ideas are banned. Reject an idea if its target audience could be replaced with an unrelated audience without materially changing the product, workflow, or positioning. Retain it only after rewriting its core function to make sense specifically for this niche's workflow.
+- Every opportunity object must contain the string fields "pain_source", "paid_workaround", and "buying_signal" using those exact names.
+- Respond with raw JSON only. Never use markdown code fences and never add commentary before or after the JSON.`;
 
   const prompt =
     `${profileStr(profile)}
@@ -305,7 +317,7 @@ QUALIFICATION RULES:
 - Reject broad labels such as "small businesses", "professionals", "content creators", or "consumers" unless narrowed to the actual Step 1 audience, role, workflow, and buying situation.
 - Reject generic concepts such as an AI assistant, dashboard, CRM, marketplace, planner, or content generator unless the evidence establishes a narrow niche-specific job and differentiated workflow.
 - Reject ideas whose smallest useful version cannot honestly deliver the core value inside the selected shipping timeframe. Do not hide excluded essential functionality behind a future roadmap.
-- For every opportunity, identify three concrete evidence elements: (a) where the pain is publicly discussed, naming real communities specific to the niche such as subreddits, Facebook groups, or specialist forums; (b) an existing paid tool or manual workaround this audience uses, with a rough price or time cost supported by research; and (c) the buying signal explaining why this exact audience pays to solve it.
+- For every opportunity, populate exactly these three evidence fields: pain_source (real niche-specific communities where the pain is discussed), paid_workaround (an existing paid tool or manual process with rough price or time cost), and buying_signal (why this exact audience pays to solve it).
 - Before retaining each opportunity, silently ask: "Would a member of the stated audience immediately recognize this as their problem?" If no, replace or rewrite it before returning the batch.
 
 Return ONLY one JSON object with this shape:
@@ -325,8 +337,8 @@ Return ONLY one JSON object with this shape:
   "app_type": "what the tool does",
   "profile_fit_reason": "how this directly follows from the Step 1 niche and customer type",
   "shipping_fit": "why the smallest useful MVP fits the selected timeframe, including essential in-scope functionality",
-  "public_discussion": "real niche-specific communities where this pain is publicly discussed",
-  "current_workaround": "specific paid tool or manual workaround used today, including rough price or time cost",
+  "pain_source": "real niche-specific communities where this pain is publicly discussed",
+  "paid_workaround": "specific paid tool or manual process used today, including rough price or time cost",
   "buying_signal": "why this exact audience spends money, labor, or costly time to solve it",
   "estimated_wtp": "evidence-based price or range, with reasoning",
   "evidence": [
@@ -342,7 +354,14 @@ Return ONLY one JSON object with this shape:
   ]
 }
   ]
-}`;
+}
+
+STRICT JSON OUTPUT CONTRACT:
+- Respond with ONLY the raw JSON object matching the schema above.
+- The first character must be { and the last character must be }.
+- Do not use markdown code fences, including json fences.
+- Do not include a preamble, explanation, commentary, or trailing text.
+- Use valid double-quoted JSON and close every string, array, and object.`;
 
   return { system, prompt };
 }
@@ -357,7 +376,7 @@ function buildStage2(
     : "no profile — score fit neutrally";
 
   const system =
-    `You are a commercially skeptical, profile-led app strategist. Turn grounded research into a short ranked list of ideas that directly serve the founder's exact primary Step 1 niche/audience. The primary audience is a HARD constraint: never substitute, broaden, generalize, or replace it, even when another legacy or secondary audience value conflicts. Audience fit, buyer-type fit, and shipping feasibility are hard eligibility gates, not optional scoring bonuses. Audience-agnostic ideas are banned unless rewritten so their core function only makes sense for the stated audience's specific workflow. Use only the supplied research and verified source list. Never add a community, source, quote, number, price, time cost, or demand claim that is absent from the research packet. Output valid JSON arrays only.`;
+    `You are a commercially skeptical, profile-led app strategist. Turn grounded research into a short ranked list of ideas that directly serve the founder's exact primary Step 1 niche/audience. The primary audience is a HARD constraint: never substitute, broaden, generalize, or replace it, even when another legacy or secondary audience value conflicts. Audience fit, buyer-type fit, and shipping feasibility are hard eligibility gates, not optional scoring bonuses. Audience-agnostic ideas are banned unless rewritten so their core function only makes sense for the stated audience's specific workflow. Use only the supplied research and verified source list. Never add a community, source, quote, number, price, time cost, or demand claim that is absent from the research packet. Every idea object must contain the string fields "pain_source", "paid_workaround", and "buying_signal" using those exact names. Respond with raw JSON only: no markdown code fences and no commentary before or after the JSON.`;
 
   const prompt =
     `FOUNDER CONTEXT: ${founderCtx}
@@ -379,7 +398,7 @@ EVIDENCE AND SPECIFICITY GATES:
 - Prefer spreadsheet, manual, and freelancer workarounds.
 - It is acceptable to return fewer than 5 ideas. Do not fill gaps with assumptions.
 - Every source_links URL must be copied verbatim from VERIFIED GOOGLE SEARCH SOURCES in the research packet. Never construct or rewrite a URL.
-- Every card must contain three concrete evidence fields: public_discussion naming real niche-specific communities where the pain is discussed; current_workaround naming an existing paid tool or manual workaround with rough price or time cost; and buying_signal explaining why this exact audience pays.
+- Every card must contain exactly these three concrete evidence fields: pain_source naming real niche-specific communities where the pain is discussed; paid_workaround naming an existing paid tool or manual process with rough price or time cost; and buying_signal explaining why this exact audience pays.
 
 AUDIENCE RECOGNITION SELF-CHECK — DO THIS BEFORE RETURNING:
 - For every idea, silently ask: "Would a member of the stated audience immediately recognize this as their problem?"
@@ -402,6 +421,7 @@ EVIDENCE STRENGTH RULES:
 - Every returned batch must contain at least 2 non-Strong cards (Medium or Weak). If the best candidates are all genuinely Strong, include two additional eligible, audience-specific opportunities with honestly Medium/Weak evidence rather than downgrading Strong cards. Never use generic filler.
 
 Return ONLY a JSON array sorted by buying_likelihood descending. Each card:
+[
 {
   "name": "App Name (2–5 marketable words)",
   "evidence_strength": "Strong|Medium|Weak",
@@ -411,14 +431,13 @@ Return ONLY a JSON array sorted by buying_likelihood descending. Each card:
   "core_problem": "the painful recurring job in 1–2 sentences",
   "pain_in_buyers_words": "short quote or faithful paraphrase from a real source",
   "evidence_summary": "what the verified sources collectively demonstrate",
-  "public_discussion": "real niche-specific communities where this pain is publicly discussed",
+  "pain_source": "real niche-specific communities where this pain is publicly discussed",
   "source_links": [
     { "url": "...", "title": "...", "platform": "...", "engagement": "..." }
   ],
   "strongest_signal": "the single most compelling data point found",
-  "current_workaround": "existing paid tool or manual workaround, including rough price or time cost",
+  "paid_workaround": "existing paid tool or manual process, including rough price or time cost",
   "buying_signal": "why this exact audience pays money, labor, or costly time to solve it",
-  "payment_proof": "specific proof they already spend money, labor, or costly time on it",
   "estimated_willingness_to_pay": "price or range and evidence-based rationale",
   "why_fits_user": "specific mapping to the Step 1 niche/audience, selected customer type, and shipping timeframe",
   "usage_frequency": "daily|weekly|monthly",
@@ -435,7 +454,16 @@ Return ONLY a JSON array sorted by buying_likelihood descending. Each card:
     "fit": 0
   },
   "final_verdict": "one commercially focused sentence on whether to build this"
-}`;
+}
+]
+
+STRICT JSON OUTPUT CONTRACT:
+- Respond with ONLY the raw JSON array matching the complete idea schema above.
+- Every idea object must include pain_source, paid_workaround, and buying_signal using those exact field names.
+- The first character must be [ and the last character must be ].
+- Do not use markdown code fences, including json fences.
+- Do not include a preamble, explanation, commentary, or trailing text.
+- Use valid double-quoted JSON and close every string, array, and object.`;
 
   return { system, prompt };
 }
