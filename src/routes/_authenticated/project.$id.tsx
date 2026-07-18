@@ -243,13 +243,16 @@ function ProfilePanel({ project, onSaved }: { project: any; onSaved: (next: Stat
   };
 
   return (
-    <div className="space-y-6 rounded-xl border border-border bg-card p-6 shadow-card">
-      <div>
-        <h2 className="text-lg font-semibold">Step 1 — Your Research Brief</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          The more specific you are with your answers, the better and more relevant app ideas ZITA will be able to find for you.
-        </p>
-      </div>
+    <div className="card-premium p-8">
+      <PanelHeader
+        stepNumber={1}
+        title="Research Brief"
+        accent="Your"
+        subtitle="Tell ZITA what to look for. The more specific you are, the better and more relevant the ideas will be."
+      />
+
+      <div className="space-y-6">
+
 
       <Field label="Which niche or audience do you want to serve?">
         <Textarea
