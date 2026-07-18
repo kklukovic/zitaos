@@ -1339,32 +1339,29 @@ function LaunchPanel({ project, onSaved }: { project: any; onSaved: (next: Statu
   const ideaName = (project.chosen_idea as any)?.name ?? "your idea";
 
   return (
-    <div className="space-y-5 rounded-xl border border-border bg-card p-6 shadow-card">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold">Step 5 — Launch Kit</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Your full launch plan for <span className="font-medium text-foreground">{ideaName}</span>.
-          </p>
-        </div>
-        {md && !running && (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={copyAll}>
-              <Copy className="h-3.5 w-3.5" />
-              Copy All
-            </Button>
-            <Button variant="outline" size="sm" onClick={download}>
-              <Download className="h-3.5 w-3.5" />
-              Download .md
-            </Button>
-            <Button variant="outline" size="sm" onClick={run} disabled={running}>
-              <RefreshCw className="h-3.5 w-3.5" />
-              Regenerate (8 credits)
-            </Button>
-          </div>
-        )}
-      </div>
+    <div className="card-premium space-y-6 p-8">
+      <PanelHeader
+        stepNumber={5}
+        title="Kit"
+        accent="Launch"
+        subtitle={<>Your complete launch plan for <span className="font-medium text-foreground">{ideaName}</span>. Execute this to launch, get traction, and validate your product.</>}
+        actions={
+          md && !running ? (
+            <>
+              <Button variant="outline" size="sm" onClick={copyAll}>
+                <Copy className="h-3.5 w-3.5" /> Copy All
+              </Button>
+              <Button variant="outline" size="sm" onClick={download}>
+                <Download className="h-3.5 w-3.5" /> Download .md
+              </Button>
+              <Button variant="outline" size="sm" onClick={run} disabled={running}>
+                <RefreshCw className="h-3.5 w-3.5" /> Regenerate (8 credits)
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
+
 
       {/* Loading state */}
       {running && (
