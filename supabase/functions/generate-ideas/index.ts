@@ -260,7 +260,9 @@ Research up to 5-7 stronger variants or adjacent opportunities that also satisfy
     `You are a profile-led app idea demand researcher with live Google Search access. Your job is to find problems the user's specific target audience is ALREADY complaining about and showing willingness to pay to solve.
 
 NON-NEGOTIABLE:
-- Treat every field in the Step 1 research brief as a binding constraint throughout research. Do not merely mention the profile after generating generic ideas.
+- Treat the primary Step 1 niche / target-audience field as a HARD constraint. Every opportunity MUST directly serve that exact audience in its specific context and workflow.
+- Never substitute, broaden, generalize, or replace the primary audience. If legacy or secondary audience inputs conflict, the first/primary niche field wins and every opportunity must serve it.
+- Do not paste the audience label onto a generic product. The audience's niche-specific workflow must shape the product's core function, evidence, positioning, and buyer.
 - Analyze the profile before searching: identify the audience's specific roles/subsegments, recurring jobs, vocabulary, likely communities, buyer/payment context, and the maximum MVP scope allowed by the shipping timeframe.
 - Every search and every retained opportunity must be traceable to that profile analysis.
 - Use live web search for every claim. Do not answer from memory.
@@ -268,7 +270,7 @@ NON-NEGOTIABLE:
 - A real source means a specific, accessible page URL — not a subreddit homepage, search-results page, or fabricated representative title.
 - Paraphrase when exact wording is uncertain. Use quotation marks only for wording visible in the source.
 - Return fewer ideas when evidence is thin. Never pad the result with generic, broad, or weakly matched ideas.
-- Reject an idea if its target audience could be replaced with several unrelated audiences without materially changing the product, workflow, or positioning.`;
+- Audience-agnostic ideas are banned. Reject an idea if its target audience could be replaced with an unrelated audience without materially changing the product, workflow, or positioning. Retain it only after rewriting its core function to make sense specifically for this niche's workflow.`;
 
   const prompt =
     `${profileStr(profile)}
@@ -276,7 +278,7 @@ NON-NEGOTIABLE:
 TASK: ${taskInstr}
 
 PROFILE ANALYSIS — DO THIS BEFORE SEARCHING:
-1. Interpret the niche/audience narrowly. Identify 3-6 plausible roles or subsegments, their recurring workflows, and niche-specific language. Do not expand into unrelated audiences.
+1. Interpret the primary niche/audience narrowly and literally. Identify 3-6 roles or subsegments inside that audience, their recurring workflows, and niche-specific language. Never expand into adjacent or unrelated audiences when the primary field is specific.
 2. Translate the selected customer type into a buyer constraint:
    - B2B: require a business workflow, identifiable budget owner, and business payment rationale. Reject consumer-only ideas.
    - B2C: require an individual end-user problem and credible personal-payment behavior. Reject ideas dependent on company procurement.
@@ -303,6 +305,8 @@ QUALIFICATION RULES:
 - Reject broad labels such as "small businesses", "professionals", "content creators", or "consumers" unless narrowed to the actual Step 1 audience, role, workflow, and buying situation.
 - Reject generic concepts such as an AI assistant, dashboard, CRM, marketplace, planner, or content generator unless the evidence establishes a narrow niche-specific job and differentiated workflow.
 - Reject ideas whose smallest useful version cannot honestly deliver the core value inside the selected shipping timeframe. Do not hide excluded essential functionality behind a future roadmap.
+- For every opportunity, identify three concrete evidence elements: (a) where the pain is publicly discussed, naming real communities specific to the niche such as subreddits, Facebook groups, or specialist forums; (b) an existing paid tool or manual workaround this audience uses, with a rough price or time cost supported by research; and (c) the buying signal explaining why this exact audience pays to solve it.
+- Before retaining each opportunity, silently ask: "Would a member of the stated audience immediately recognize this as their problem?" If no, replace or rewrite it before returning the batch.
 
 Return ONLY one JSON object with this shape:
 {
@@ -321,8 +325,9 @@ Return ONLY one JSON object with this shape:
   "app_type": "what the tool does",
   "profile_fit_reason": "how this directly follows from the Step 1 niche and customer type",
   "shipping_fit": "why the smallest useful MVP fits the selected timeframe, including essential in-scope functionality",
-  "current_workaround": "spreadsheet, manual workflow, freelancer, or existing paid tool used today",
-  "buying_signal": "specific evidence that money or costly labor is already involved",
+  "public_discussion": "real niche-specific communities where this pain is publicly discussed",
+  "current_workaround": "specific paid tool or manual workaround used today, including rough price or time cost",
+  "buying_signal": "why this exact audience spends money, labor, or costly time to solve it",
   "estimated_wtp": "evidence-based price or range, with reasoning",
   "evidence": [
     {
@@ -352,7 +357,7 @@ function buildStage2(
     : "no profile — score fit neutrally";
 
   const system =
-    `You are a commercially skeptical, profile-led app strategist. Turn grounded research into a short ranked list of ideas that are unusually relevant to this founder's exact Step 1 brief. Audience fit, buyer-type fit, and shipping feasibility are hard eligibility gates, not optional scoring bonuses. Use only the supplied research and verified source list. Never add a source, quote, number, or demand claim that is absent from the research packet. Output valid JSON arrays only.`;
+    `You are a commercially skeptical, profile-led app strategist. Turn grounded research into a short ranked list of ideas that directly serve the founder's exact primary Step 1 niche/audience. The primary audience is a HARD constraint: never substitute, broaden, generalize, or replace it, even when another legacy or secondary audience value conflicts. Audience fit, buyer-type fit, and shipping feasibility are hard eligibility gates, not optional scoring bonuses. Audience-agnostic ideas are banned unless rewritten so their core function only makes sense for the stated audience's specific workflow. Use only the supplied research and verified source list. Never add a community, source, quote, number, price, time cost, or demand claim that is absent from the research packet. Output valid JSON arrays only.`;
 
   const prompt =
     `FOUNDER CONTEXT: ${founderCtx}
@@ -361,18 +366,24 @@ STAGE 1 RESEARCH — hypotheses with community evidence:
 ${stage1Output}
 
 HARD PROFILE GATES — APPLY BEFORE COMMERCIAL SCORING:
-- Drop any idea that does not clearly serve the exact niche/audience in the Step 1 brief. Adjacent subsegments are allowed only when the research explains the direct connection.
+- Drop any idea that does not directly serve the exact primary niche/audience in the Step 1 brief and its specific context and workflow. The primary niche field always wins over conflicting legacy or secondary audience inputs.
+- Never broaden the audience to a more general category or replace it with an adjacent audience. A subsegment is allowed only when it is clearly contained within the stated primary audience.
 - Drop any idea that does not match the selected customer type and its payment context (B2B, B2C, or creators/solopreneurs).
 - Drop any idea whose smallest useful MVP cannot deliver its core value within the selected shipping timeframe. Judge required integrations, data acquisition, compliance, operations, network effects, and workflow breadth honestly.
-- Drop any idea that would remain essentially unchanged if the stated audience were replaced by several unrelated audiences. Niche labels pasted onto generic products do not count as profile fit.
+- Drop any idea that would remain essentially unchanged if the stated audience were replaced by any unrelated audience. Niche labels pasted onto generic products do not count as profile fit; rewrite the core function around the niche workflow or reject it.
 - Drop any idea with a profile fit score below 7/10 or a shipping-timeframe simplicity score below 7/10.
 
 EVIDENCE AND SPECIFICITY GATES:
-- Drop any idea without both a concrete complaint and a concrete buying signal from the grounded research.
+- Drop any idea without a grounded complaint and at least a real, though potentially limited, buying signal from the grounded research.
 - Drop generic or saturated ideas unless the research proves a narrow underserved angle specific to this audience.
 - Prefer spreadsheet, manual, and freelancer workarounds.
 - It is acceptable to return fewer than 5 ideas. Do not fill gaps with assumptions.
 - Every source_links URL must be copied verbatim from VERIFIED GOOGLE SEARCH SOURCES in the research packet. Never construct or rewrite a URL.
+- Every card must contain three concrete evidence fields: public_discussion naming real niche-specific communities where the pain is discussed; current_workaround naming an existing paid tool or manual workaround with rough price or time cost; and buying_signal explaining why this exact audience pays.
+
+AUDIENCE RECOGNITION SELF-CHECK — DO THIS BEFORE RETURNING:
+- For every idea, silently ask: "Would a member of the stated audience immediately recognize this as their problem?"
+- If no, replace the idea or rewrite its core function around a workflow unique to the stated audience. Never return the failed version.
 
 SCORING DIMENSIONS (each 1–10):
 - pain: urgency — many complaints, workarounds, repeated questions = high
@@ -386,23 +397,27 @@ BUYING LIKELIHOOD (1–10) is the final ranking score. Calculate it from: 30% wi
 EVIDENCE STRENGTH RULES:
 - Strong: multiple specific sources, including a clear complaint and clear payment evidence
 - Medium: at least one specific complaint source plus one credible payment or paid-workaround signal
-- Weak: missing or ambiguous buying evidence — omit these ideas from the final output
+- Weak: at least one verified, audience-specific complaint source but only limited or indirect buying evidence. Keep the weakness visible; never invent stronger proof.
+- Score honestly as Strong, Medium, or Weak. Do not inflate or downgrade a card merely to manipulate distribution.
+- Every returned batch must contain at least 2 non-Strong cards (Medium or Weak). If the best candidates are all genuinely Strong, include two additional eligible, audience-specific opportunities with honestly Medium/Weak evidence rather than downgrading Strong cards. Never use generic filler.
 
 Return ONLY a JSON array sorted by buying_likelihood descending. Each card:
 {
   "name": "App Name (2–5 marketable words)",
-  "evidence_strength": "Strong|Medium",
+  "evidence_strength": "Strong|Medium|Weak",
   "buying_likelihood": 0,
   "target_audience": "specific description tied directly to the Step 1 niche; never a broad substitute audience",
   "buyer": "the exact role or person who controls the budget",
   "core_problem": "the painful recurring job in 1–2 sentences",
   "pain_in_buyers_words": "short quote or faithful paraphrase from a real source",
   "evidence_summary": "what the verified sources collectively demonstrate",
+  "public_discussion": "real niche-specific communities where this pain is publicly discussed",
   "source_links": [
     { "url": "...", "title": "...", "platform": "...", "engagement": "..." }
   ],
   "strongest_signal": "the single most compelling data point found",
-  "current_workaround": "how buyers solve it today, emphasizing spreadsheets, manual work, or freelancers",
+  "current_workaround": "existing paid tool or manual workaround, including rough price or time cost",
+  "buying_signal": "why this exact audience pays money, labor, or costly time to solve it",
   "payment_proof": "specific proof they already spend money, labor, or costly time on it",
   "estimated_willingness_to_pay": "price or range and evidence-based rationale",
   "why_fits_user": "specific mapping to the Step 1 niche/audience, selected customer type, and shipping timeframe",
