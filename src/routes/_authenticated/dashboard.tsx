@@ -157,10 +157,11 @@ function InlineProjectName({ project, onRenamed }: { project: { id: string; name
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-card">
-      <div className="text-xs uppercase tracking-widest text-muted-foreground">{label}</div>
-      <div className="mt-2 text-3xl font-bold text-gradient-electric">{value}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
+    <div className="card-premium p-6">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <div className="mt-3 text-4xl font-black tracking-tight text-gradient-heading">{value}</div>
+      <div className="mt-2 text-xs text-muted-foreground">{hint}</div>
     </div>
   );
 }
+
