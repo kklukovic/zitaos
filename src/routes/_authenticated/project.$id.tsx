@@ -513,23 +513,27 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
       {!ideas && !running && (
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {DISCOVER_MODES.map((m) => (
+            {DISCOVER_MODES.map((m, mi) => (
               <button
                 key={m.key}
                 type="button"
                 onClick={() => setMode(m.key)}
                 className={cn(
-                  "rounded-xl border-2 p-4 text-left transition",
+                  "group relative overflow-hidden rounded-2xl border p-5 text-left transition",
                   mode === m.key
-                    ? "border-primary bg-primary/10"
-                    : "border-border bg-card hover:border-primary/40 hover:bg-accent/20",
+                    ? "border-primary/60 bg-primary/10 shadow-glow-soft"
+                    : "border-border bg-card/50 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-accent/20",
                 )}
               >
-                <div className="text-sm font-semibold">{m.title}</div>
-                <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{m.desc}</div>
+                <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-electric text-primary-foreground shadow-glow-soft">
+                  <span className="text-xs font-bold">{mi + 1}</span>
+                </div>
+                <div className="text-sm font-semibold text-foreground">{m.title}</div>
+                <div className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{m.desc}</div>
               </button>
             ))}
           </div>
+
 
           {mode === "validate" && (
             <Textarea
