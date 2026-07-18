@@ -236,10 +236,10 @@ function clampProfile(raw: unknown): Record<string, string> {
 function profileStr(profile: Record<string, string>): string {
   const has = Object.values(profile).some((v) => v?.trim());
   if (!has) return "No user profile provided — generate ideas broadly.";
-  return `USER PROFILE:
-- Niche or audience: ${profile.niche_audience || profile.audience || profile.niche || "not specified"}
-- Shipping timeframe: ${profile.ship_time || profile.time_per_week || "not specified"}
-- Customer type: ${profile.customer_type || "not specified"}`;
+  return `STEP 1 RESEARCH BRIEF (binding constraints, not optional preferences):
+- Niche / target audience: ${profile.niche_audience || profile.audience || profile.niche || "not specified"}
+- Maximum useful MVP shipping timeframe: ${profile.ship_time || profile.time_per_week || "not specified"}
+- Target market / buyer type: ${profile.customer_type || "not specified"}`;
 }
 
 function buildStage1(
@@ -249,47 +249,78 @@ function buildStage1(
 ): { system: string; prompt: string } {
   const taskInstr =
     mode === "personalized"
-      ? `Find 5-7 specific app or digital-tool opportunities tailored to the user's niche, audience, customer type, and shipping constraints.`
+      ? `Find up to 5-7 highly specific app or digital-tool opportunities inside the user's stated niche. Each opportunity must serve the stated audience, match the selected buyer type, and have a credible MVP that fits the shipping timeframe.`
       : mode === "surprise"
-      ? `Find 5-7 diverse, specific app or digital-tool opportunities across niches. Every opportunity still needs verifiable complaint and buying evidence.`
+      ? `Find up to 5-7 non-obvious opportunities for the stated audience. "Surprise" means unexpected workflows, subsegments, or angles within or immediately adjacent to that audience — never unrelated generic niches. The selected buyer type and shipping timeframe remain hard constraints.`
       : `The user has this rough idea: "${roughIdea}"
 
-Research 5-7 stronger variants or adjacent opportunities. Challenge the original idea when the evidence points elsewhere.`;
+Research up to 5-7 stronger variants or adjacent opportunities that also satisfy the Step 1 audience, buyer type, and shipping timeframe. Challenge or reject the original idea when it conflicts with the profile or evidence.`;
 
   const system =
-    `You are an app idea demand researcher with live Google Search access. Your job is to find problems people are ALREADY complaining about and showing willingness to pay to solve.
+    `You are a profile-led app idea demand researcher with live Google Search access. Your job is to find problems the user's specific target audience is ALREADY complaining about and showing willingness to pay to solve.
 
 NON-NEGOTIABLE:
+- Treat every field in the Step 1 research brief as a binding constraint throughout research. Do not merely mention the profile after generating generic ideas.
+- Analyze the profile before searching: identify the audience's specific roles/subsegments, recurring jobs, vocabulary, likely communities, buyer/payment context, and the maximum MVP scope allowed by the shipping timeframe.
+- Every search and every retained opportunity must be traceable to that profile analysis.
 - Use live web search for every claim. Do not answer from memory.
 - Do not invent posts, quotes, engagement, URLs, payment behavior, or demand.
 - A real source means a specific, accessible page URL — not a subreddit homepage, search-results page, or fabricated representative title.
 - Paraphrase when exact wording is uncertain. Use quotation marks only for wording visible in the source.
-- Return fewer ideas when evidence is thin. Never pad the result with generic ideas.`;
+- Return fewer ideas when evidence is thin. Never pad the result with generic, broad, or weakly matched ideas.
+- Reject an idea if its target audience could be replaced with several unrelated audiences without materially changing the product, workflow, or positioning.`;
 
   const prompt =
     `${profileStr(profile)}
 
 TASK: ${taskInstr}
 
+PROFILE ANALYSIS — DO THIS BEFORE SEARCHING:
+1. Interpret the niche/audience narrowly. Identify 3-6 plausible roles or subsegments, their recurring workflows, and niche-specific language. Do not expand into unrelated audiences.
+2. Translate the selected customer type into a buyer constraint:
+   - B2B: require a business workflow, identifiable budget owner, and business payment rationale. Reject consumer-only ideas.
+   - B2C: require an individual end-user problem and credible personal-payment behavior. Reject ideas dependent on company procurement.
+   - Creators / solopreneurs: require a creator or one-person-business workflow and self-serve purchasing. Reject enterprise-heavy and generic consumer ideas.
+3. Convert the shipping timeframe into an MVP scope ceiling:
+   - A few days: one narrow job, minimal screens/data model, no marketplace/network effects, and no essential complex integrations.
+   - 1 week: one complete narrow workflow with at most a small number of straightforward integrations.
+   - 2-4 weeks: a focused product with a few bounded workflows/integrations; still reject enterprise platforms, network-effect products, or operationally heavy concepts.
+4. Derive niche-specific search terms by combining audience/role language, recurring jobs, current workarounds, and complaint/payment phrases. Broad searches that omit the user's niche or audience are not sufficient.
+
 SEARCH PROCESS:
-1. Search relevant Reddit threads for phrases such as "I wish there was a tool", "does anything exist that", "I'd pay for", and "how do you handle".
-2. Search Indie Hackers for the same recurring complaint patterns.
-3. Search Twitter/X for "someone should build" and "I hate doing" combined with the niche or task.
-4. Search Upwork and Fiverr for repeated paid manual work that software could simplify.
-5. Cross-check each opportunity against existing tools. Keep saturated categories only when complaints reveal a narrow underserved angle.
+1. Search relevant Reddit threads using the audience's exact roles, niche vocabulary, and workflows with phrases such as "I wish there was a tool", "does anything exist that", "I'd pay for", and "how do you handle".
+2. Search Indie Hackers for the same profile-specific recurring complaint patterns, especially for creators/solopreneurs and small-business buyers.
+3. Search Twitter/X for "someone should build" and "I hate doing" combined with the user's audience, role, or niche-specific task.
+4. Search Upwork and Fiverr for repeated paid manual work performed for or by the stated audience that a small product could simplify within the shipping limit.
+5. Cross-check each opportunity against existing tools used by this audience. Keep saturated categories only when complaints prove a narrow, profile-specific underserved angle.
 
 QUALIFICATION RULES:
-- Keep an opportunity only when it has at least one specific complaint source AND one buying signal.
+- Keep an opportunity only when it has at least one specific complaint source, one buying signal, a direct audience match, a direct customer-type match, and a feasible MVP for the selected shipping timeframe.
 - A buying signal can be explicit willingness to pay, repeated paid freelance gigs, an existing paid but disliked tool, or a costly manual business workflow.
 - Prioritize spreadsheets, copy-paste work, repetitive admin, and tasks outsourced to freelancers.
 - Record only engagement numbers visible in a source; otherwise use "not verified".
 - If a platform has no usable evidence, omit it. Do not manufacture platform coverage.
+- Reject broad labels such as "small businesses", "professionals", "content creators", or "consumers" unless narrowed to the actual Step 1 audience, role, workflow, and buying situation.
+- Reject generic concepts such as an AI assistant, dashboard, CRM, marketplace, planner, or content generator unless the evidence establishes a narrow niche-specific job and differentiated workflow.
+- Reject ideas whose smallest useful version cannot honestly deliver the core value inside the selected shipping timeframe. Do not hide excluded essential functionality behind a future roadmap.
 
-Return ONLY a JSON array. Each item:
+Return ONLY one JSON object with this shape:
+{
+  "profile_analysis": {
+    "niche_interpretation": "narrow interpretation of the Step 1 audience",
+    "roles_and_subsegments": ["specific roles/subsegments considered"],
+    "recurring_workflows": ["profile-specific jobs/workflows worth researching"],
+    "buyer_constraint": "what the selected customer type requires and excludes",
+    "shipping_scope": "what can and cannot fit the selected timeframe",
+    "search_terms": ["profile-specific terms and query angles used"]
+  },
+  "opportunities": [
 {
   "hypothesis": "concise problem statement",
   "audience": "specific who",
   "app_type": "what the tool does",
+  "profile_fit_reason": "how this directly follows from the Step 1 niche and customer type",
+  "shipping_fit": "why the smallest useful MVP fits the selected timeframe, including essential in-scope functionality",
   "current_workaround": "spreadsheet, manual workflow, freelancer, or existing paid tool used today",
   "buying_signal": "specific evidence that money or costly labor is already involved",
   "estimated_wtp": "evidence-based price or range, with reasoning",
@@ -303,6 +334,8 @@ Return ONLY a JSON array. Each item:
       "engagement": "visible engagement or not verified",
       "payment_signal": "what this source proves about willingness to pay"
     }
+  ]
+}
   ]
 }`;
 
@@ -319,7 +352,7 @@ function buildStage2(
     : "no profile — score fit neutrally";
 
   const system =
-    `You are a commercially skeptical app strategist. Turn grounded research into a short ranked list of app ideas. Use only the supplied research and verified source list. Never add a source, quote, number, or demand claim that is absent from the research packet. Output valid JSON arrays only.`;
+    `You are a commercially skeptical, profile-led app strategist. Turn grounded research into a short ranked list of ideas that are unusually relevant to this founder's exact Step 1 brief. Audience fit, buyer-type fit, and shipping feasibility are hard eligibility gates, not optional scoring bonuses. Use only the supplied research and verified source list. Never add a source, quote, number, or demand claim that is absent from the research packet. Output valid JSON arrays only.`;
 
   const prompt =
     `FOUNDER CONTEXT: ${founderCtx}
@@ -327,9 +360,16 @@ function buildStage2(
 STAGE 1 RESEARCH — hypotheses with community evidence:
 ${stage1Output}
 
-FILTER BEFORE SCORING:
-- Drop any idea without both a concrete complaint and a concrete buying signal.
-- Drop generic or saturated ideas unless the research proves a narrow underserved angle.
+HARD PROFILE GATES — APPLY BEFORE COMMERCIAL SCORING:
+- Drop any idea that does not clearly serve the exact niche/audience in the Step 1 brief. Adjacent subsegments are allowed only when the research explains the direct connection.
+- Drop any idea that does not match the selected customer type and its payment context (B2B, B2C, or creators/solopreneurs).
+- Drop any idea whose smallest useful MVP cannot deliver its core value within the selected shipping timeframe. Judge required integrations, data acquisition, compliance, operations, network effects, and workflow breadth honestly.
+- Drop any idea that would remain essentially unchanged if the stated audience were replaced by several unrelated audiences. Niche labels pasted onto generic products do not count as profile fit.
+- Drop any idea with a profile fit score below 7/10 or a shipping-timeframe simplicity score below 7/10.
+
+EVIDENCE AND SPECIFICITY GATES:
+- Drop any idea without both a concrete complaint and a concrete buying signal from the grounded research.
+- Drop generic or saturated ideas unless the research proves a narrow underserved angle specific to this audience.
 - Prefer spreadsheet, manual, and freelancer workarounds.
 - It is acceptable to return fewer than 5 ideas. Do not fill gaps with assumptions.
 - Every source_links URL must be copied verbatim from VERIFIED GOOGLE SEARCH SOURCES in the research packet. Never construct or rewrite a URL.
@@ -337,11 +377,11 @@ FILTER BEFORE SCORING:
 SCORING DIMENSIONS (each 1–10):
 - pain: urgency — many complaints, workarounds, repeated questions = high
 - willingness_to_pay: explicit price mentions, paid gigs, existing paid tools, or expensive labor = high
-- simplicity: solo dev ships useful MVP in under a week? fewer integrations = higher
+- simplicity: can a solo developer ship the smallest genuinely useful MVP inside THIS USER'S selected timeframe? Narrow scope and fewer dependencies = higher
 - retention: recurring return? data lock-in, workflow dependency, habit = high
-- fit: how well does this match the founder profile, skills, and audience?
+- fit: direct match to the exact Step 1 niche/audience AND selected customer type; superficial niche wording = low
 
-BUYING LIKELIHOOD (1–10) is the commercial ranking score. Weight evidence of actual spending and painful recurring work more heavily than novelty. Sort descending by buying_likelihood.
+BUYING LIKELIHOOD (1–10) is the final ranking score. Calculate it from: 30% willingness_to_pay, 20% pain, 20% profile/customer-type fit, 20% simplicity relative to the selected shipping timeframe, and 10% retention. Evidence of spending and painful recurring work still matters more than novelty, but a generic or infeasible idea can never outrank a strongly matched feasible one. Sort descending by buying_likelihood.
 
 EVIDENCE STRENGTH RULES:
 - Strong: multiple specific sources, including a clear complaint and clear payment evidence
@@ -353,7 +393,7 @@ Return ONLY a JSON array sorted by buying_likelihood descending. Each card:
   "name": "App Name (2–5 marketable words)",
   "evidence_strength": "Strong|Medium",
   "buying_likelihood": 0,
-  "target_audience": "specific description of who",
+  "target_audience": "specific description tied directly to the Step 1 niche; never a broad substitute audience",
   "buyer": "the exact role or person who controls the budget",
   "core_problem": "the painful recurring job in 1–2 sentences",
   "pain_in_buyers_words": "short quote or faithful paraphrase from a real source",
@@ -365,10 +405,10 @@ Return ONLY a JSON array sorted by buying_likelihood descending. Each card:
   "current_workaround": "how buyers solve it today, emphasizing spreadsheets, manual work, or freelancers",
   "payment_proof": "specific proof they already spend money, labor, or costly time on it",
   "estimated_willingness_to_pay": "price or range and evidence-based rationale",
-  "why_fits_user": "why this idea suits the founder profile, skills, and audience",
+  "why_fits_user": "specific mapping to the Step 1 niche/audience, selected customer type, and shipping timeframe",
   "usage_frequency": "daily|weekly|monthly",
   "why_people_keep_paying": "what creates lock-in or recurring value",
-  "fast_mvp": "smallest realistic version buildable within the user's shipping timeframe — clearly state what is IN and OUT",
+  "fast_mvp": "smallest useful version buildable within the selected shipping timeframe — explicitly state why it fits and what is IN and OUT",
   "unique_angle": "one clear evidence-led difference from existing tools",
   "churn_risk": "main reason users might leave and how to prevent it",
   "validation_test": "fastest way to validate demand before building anything",
