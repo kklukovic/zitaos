@@ -65,8 +65,8 @@ function ProjectWorkspace() {
   const refresh = () => qc.invalidateQueries({ queryKey: ["project", id] });
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
-      <ProjectHeader project={project} onSaved={refresh} />
+    <div className="mx-auto max-w-6xl px-6 py-10">
+      <ProjectHeader project={project} onSaved={refresh} activeIdx={idx(active)} />
 
       <StepBar active={active} reached={reached} status={project.status} onPick={setActive} />
 
@@ -81,8 +81,40 @@ function ProjectWorkspace() {
   );
 }
 
+// ---------- Shared premium panel header ----------
+function PanelHeader({
+  stepNumber,
+  title,
+  accent,
+  subtitle,
+  actions,
+}: {
+  stepNumber: number;
+  title: string;
+  accent?: string;
+  subtitle?: React.ReactNode;
+  actions?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-border/60 pb-6">
+      <div className="min-w-0 flex-1">
+        <div className="scene-chip mb-3">
+          <Sparkles className="h-3 w-3" /> Step {stepNumber} of 5
+        </div>
+        <h2 className="step-title">
+          <span className="text-foreground">Step {stepNumber} — </span>
+          <span className="text-gradient-heading">{accent ?? title}</span>
+          {accent ? <span className="text-foreground"> {title}</span> : null}
+        </h2>
+        {subtitle && <p className="mt-3 max-w-3xl text-sm leading-relaxed text-muted-foreground">{subtitle}</p>}
+      </div>
+      {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
+    </div>
+  );
+}
+
 // ---------- Header with inline-editable name + status badge ----------
-function ProjectHeader({ project, onSaved }: { project: any; onSaved: () => void }) {
+function ProjectHeader({ project, onSaved, activeIdx }: { project: any; onSaved: () => void; activeIdx: number }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(project.name);
   useEffect(() => setName(project.name), [project.name]);
@@ -98,23 +130,28 @@ function ProjectHeader({ project, onSaved }: { project: any; onSaved: () => void
   };
 
   return (
-    <div className="mb-6 flex flex-wrap items-center gap-3">
-      <div className="text-xs uppercase tracking-widest text-primary">Project</div>
-      {editing ? (
-        <Input
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={save}
-          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setName(project.name); setEditing(false); } }}
-          className="h-9 max-w-md text-xl font-bold"
-        />
-      ) : (
-        <h1 onClick={() => setEditing(true)} className="cursor-text rounded px-1 text-2xl font-bold hover:bg-accent/40" title="Click to rename">
-          {project.name}
-        </h1>
-      )}
-      <span className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-xs uppercase tracking-wider text-primary">
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+      <div className="min-w-0">
+        <div className="mb-2 flex items-center gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-primary/80">
+          <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-glow-soft" />
+          Project · Step {activeIdx + 1} of 5
+        </div>
+        {editing ? (
+          <Input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={save}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setName(project.name); setEditing(false); } }}
+            className="h-11 max-w-xl text-2xl font-bold"
+          />
+        ) : (
+          <h1 onClick={() => setEditing(true)} className="cursor-text rounded px-1 text-3xl font-bold tracking-tight hover:bg-accent/30 sm:text-4xl" title="Click to rename">
+            {project.name}
+          </h1>
+        )}
+      </div>
+      <span className="rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-primary shadow-glow-soft">
         {project.status}
       </span>
     </div>
@@ -124,10 +161,13 @@ function ProjectHeader({ project, onSaved }: { project: any; onSaved: () => void
 // ---------- Step bar ----------
 function StepBar({ active, reached, status, onPick }: { active: Status; reached: number; status: string; onPick: (s: Status) => void }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-card">
+    <div className="card-premium p-5 sm:p-6">
       <div className="relative flex items-center justify-between gap-2">
-        <div className="absolute left-5 right-5 top-5 h-0.5 -translate-y-1/2 bg-border" />
-        <div className="absolute left-5 top-5 h-0.5 -translate-y-1/2 bg-gradient-electric transition-all" style={{ width: `calc((100% - 2.5rem) * ${reached / (STEPS.length - 1)})` }} />
+        <div className="absolute left-6 right-6 top-6 h-px -translate-y-1/2 bg-border" />
+        <div
+          className="absolute left-6 top-6 h-px -translate-y-1/2 bg-gradient-electric transition-all"
+          style={{ width: `calc((100% - 3rem) * ${reached / (STEPS.length - 1)})` }}
+        />
         {STEPS.map((s, i) => {
           const locked = i > reached;
           const done = i < reached || status === "completed";
@@ -139,22 +179,22 @@ function StepBar({ active, reached, status, onPick }: { active: Status; reached:
               onClick={() => !locked && onPick(s.key)}
               title={locked ? "Complete previous steps first" : s.label}
               className={cn(
-                "relative z-10 flex flex-1 flex-col items-center gap-1.5 rounded-lg px-2 py-2 transition",
-                locked ? "cursor-not-allowed opacity-40" : "hover:bg-accent/40",
+                "relative z-10 flex flex-1 flex-col items-center gap-2 rounded-xl px-2 py-1 transition",
+                locked ? "cursor-not-allowed opacity-40" : "hover:-translate-y-0.5",
               )}
             >
               <div className={cn(
-                "flex h-10 w-10 items-center justify-center rounded-full border-2 text-sm font-semibold transition",
-                current && "border-primary bg-gradient-electric text-primary-foreground shadow-glow",
-                !current && done && "border-success bg-success/20 text-success",
+                "flex h-12 w-12 items-center justify-center rounded-full border text-sm font-bold transition",
+                current && "border-primary/60 bg-gradient-electric text-primary-foreground shadow-glow ring-4 ring-primary/20",
+                !current && done && "border-primary/40 bg-primary/15 text-primary",
                 !current && !done && !locked && "border-border bg-card text-foreground",
                 locked && "border-border bg-card text-muted-foreground",
               )}>
                 {locked ? <Lock className="h-4 w-4" /> : done ? <Check className="h-4 w-4" /> : i + 1}
               </div>
-              <div className="flex items-center gap-1 text-xs">
+              <div className="flex items-center gap-1 text-[0.72rem]">
                 <s.icon className={cn("h-3 w-3", current ? "text-primary" : "text-muted-foreground")} />
-                <span className={cn(current && "font-semibold text-foreground", !current && "text-muted-foreground")}>{s.label}</span>
+                <span className={cn("uppercase tracking-wider", current ? "font-bold text-foreground" : "text-muted-foreground")}>{s.label}</span>
               </div>
             </button>
           );
@@ -163,6 +203,7 @@ function StepBar({ active, reached, status, onPick }: { active: Status; reached:
     </div>
   );
 }
+
 
 // ---------- Step 1: Research brief ----------
 const SHIP_TIMES = ["A few days", "1 week", "2–4 weeks"];
