@@ -72,12 +72,14 @@ Deno.serve(async (req: Request) => {
     const { system: s1System, prompt: s1Prompt } = buildStage1(mode, profile, roughIdea);
 
     let s1Result, s2Result;
+    const verifiedSourceUrls = new Set<string>();
     try {
       s1Result = await callAI({
         system: s1System,
         prompt: s1Prompt,
-        jsonMode: true,
-        temperature: 0.8,
+        jsonMode: false,
+        webSearch: true,
+        temperature: 0.35,
         maxTokens: 16384,
       });
 
@@ -86,8 +88,20 @@ Deno.serve(async (req: Request) => {
         return fail("Research stage returned no content — try again.", 502);
       }
 
+      if (!s1Result.groundingSources?.length) {
+        await refund();
+        return fail("Research found no verifiable web sources — try a more specific niche.", 502);
+      }
+
+      for (const source of s1Result.groundingSources) verifiedSourceUrls.add(source.url);
+
+      const groundedSourceList = s1Result.groundingSources
+        .map((source, index) => `${index + 1}. ${source.title} — ${source.url}`)
+        .join("\n");
+      const groundedResearch = `${s1Result.text}\n\nVERIFIED GOOGLE SEARCH SOURCES:\n${groundedSourceList}`;
+
       // ── STAGE 2: Scoring + card generation ───────────────────────────────────
-      const { system: s2System, prompt: s2Prompt } = buildStage2(profile, s1Result.text);
+      const { system: s2System, prompt: s2Prompt } = buildStage2(profile, groundedResearch);
 
       s2Result = await callAI({
         system: s2System,
@@ -138,13 +152,50 @@ Deno.serve(async (req: Request) => {
       return fail("AI returned invalid JSON — try again.", 502);
     }
 
-    // Sort: Strong → Medium → Weak
+    type IdeaRecord = Record<string, unknown>;
+    const isRecord = (value: unknown): value is IdeaRecord =>
+      Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+    const verifiedIdeas = ideas
+      .filter(isRecord)
+      .map((idea) => {
+        const sourceLinks = Array.isArray(idea.source_links)
+          ? idea.source_links.filter(
+              (source): source is IdeaRecord =>
+                isRecord(source) &&
+                typeof source.url === "string" &&
+                verifiedSourceUrls.has(source.url),
+            )
+          : [];
+        const buyingLikelihood = Math.max(1, Math.min(10, Math.round(Number(idea.buying_likelihood) || 1)));
+        return { ...idea, source_links: sourceLinks, buying_likelihood: buyingLikelihood };
+      })
+      .filter(
+        (idea) =>
+          idea.source_links.length > 0 &&
+          typeof idea.payment_proof === "string" &&
+          idea.payment_proof.trim().length > 0,
+      );
+
+    if (verifiedIdeas.length === 0) {
+      await refund();
+      return fail("No ideas passed the verified demand and payment-evidence checks.", 502);
+    }
+
+    // Rank by buying likelihood first, then evidence strength and WTP score.
     const evidenceOrder: Record<string, number> = { Strong: 0, Medium: 1, Weak: 2 };
-    ideas.sort(
-      (a: any, b: any) =>
-        (evidenceOrder[a.evidence_strength] ?? 1) -
-        (evidenceOrder[b.evidence_strength] ?? 1),
-    );
+    verifiedIdeas.sort((a, b) => {
+      const aScores = isRecord(a.scores) ? a.scores : {};
+      const bScores = isRecord(b.scores) ? b.scores : {};
+      return (
+        b.buying_likelihood - a.buying_likelihood ||
+        (evidenceOrder[String(a.evidence_strength)] ?? 1) -
+          (evidenceOrder[String(b.evidence_strength)] ?? 1) ||
+        (Number(bScores.willingness_to_pay) || 0) -
+          (Number(aScores.willingness_to_pay) || 0)
+      );
+    });
+    ideas = verifiedIdeas;
 
     // Audit log (service role bypasses RLS — user inserts are blocked by policy)
     await admin.from("credit_usage").insert({
@@ -186,13 +237,11 @@ function profileStr(profile: Record<string, string>): string {
   const has = Object.values(profile).some((v) => v?.trim());
   if (!has) return "No user profile provided — generate ideas broadly.";
   return `USER PROFILE:
-- Niche: ${profile.niche || "not specified"}
-- Expertise: ${profile.expertise || "not specified"}
-- Audience: ${profile.audience || "not specified"}
-- Current offer: ${profile.offer || "not specified"}
-- Preferred tool type: ${profile.tool_type || "not specified"}
-- Build skill level: ${profile.skill_level || "beginner"}
-- Time per week: ${profile.time_per_week || "5-10h"}`;
+- Build skills and tools: ${profile.build_capabilities || profile.expertise || "not specified"}
+- Niche or audience: ${profile.niche_audience || profile.audience || profile.niche || "not specified"}
+- Target price range: ${profile.price_range || "not specified"}
+- Shipping timeframe: ${profile.ship_time || profile.time_per_week || "not specified"}
+- Customer type: ${profile.customer_type || "not specified"}`;
 }
 
 function buildStage1(
@@ -202,49 +251,61 @@ function buildStage1(
 ): { system: string; prompt: string } {
   const taskInstr =
     mode === "personalized"
-      ? `Based on the user profile, generate 8-10 specific micro-SaaS idea hypotheses tailored to their niche, audience, and goals. Each must be a practical digital tool buildable by a solo developer in 1-7 days.`
+      ? `Find 5-7 specific app or digital-tool opportunities tailored to the user's niche, audience, price, and shipping constraints.`
       : mode === "surprise"
-      ? `Generate 8-10 diverse practical micro-SaaS idea hypotheses across different niches. Be creative but grounded — each must solve a specific recurring pain that people pay to solve. Not generic categories — specific tools for specific people in specific situations.`
+      ? `Find 5-7 diverse, specific app or digital-tool opportunities across niches. Every opportunity still needs verifiable complaint and buying evidence.`
       : `The user has this rough idea: "${roughIdea}"
 
-Generate 8-10 stronger, more specific variants and adjacent ideas. Some refine the original, others challenge it with better angles or different audiences. All must be practically buildable solo.`;
+Research 5-7 stronger variants or adjacent opportunities. Challenge the original idea when the evidence points elsewhere.`;
 
   const system =
-    `You are a senior micro-SaaS market researcher. You have deep knowledge of online communities, Reddit threads, niche forums, Indie Hackers discussions, and the recurring pain patterns people discuss across the internet. You output valid JSON arrays only.`;
+    `You are an app idea demand researcher with live Google Search access. Your job is to find problems people are ALREADY complaining about and showing willingness to pay to solve.
+
+NON-NEGOTIABLE:
+- Use live web search for every claim. Do not answer from memory.
+- Do not invent posts, quotes, engagement, URLs, payment behavior, or demand.
+- A real source means a specific, accessible page URL — not a subreddit homepage, search-results page, or fabricated representative title.
+- Paraphrase when exact wording is uncertain. Use quotation marks only for wording visible in the source.
+- Return fewer ideas when evidence is thin. Never pad the result with generic ideas.`;
 
   const prompt =
     `${profileStr(profile)}
 
 TASK: ${taskInstr}
 
-For EACH hypothesis, draw on your knowledge of online communities to describe WHERE this pain is discussed. Name specific subreddits, forums, or communities. Describe the types of threads (complaints, how-do-I questions, tool comparisons) and characterize what the audience actually says.
+SEARCH PROCESS:
+1. Search relevant Reddit threads for phrases such as "I wish there was a tool", "does anything exist that", "I'd pay for", and "how do you handle".
+2. Search Indie Hackers for the same recurring complaint patterns.
+3. Search Twitter/X for "someone should build" and "I hate doing" combined with the niche or task.
+4. Search Upwork and Fiverr for repeated paid manual work that software could simplify.
+5. Cross-check each opportunity against existing tools. Keep saturated categories only when complaints reveal a narrow underserved angle.
 
-EVIDENCE QUALITY RULES:
-- Only name communities that genuinely exist and discuss this topic
-- Describe thread patterns you know are real
-- Use representative/typical post titles rather than exact titles
-- For URLs: use community-level links (https://reddit.com/r/[subreddit]) unless certain of a specific post
-- For engagement: describe typical patterns ("posts like this get 50-200 comments") not invented exact numbers
-- If a community genuinely does NOT discuss this topic, set evidence_found: false
+QUALIFICATION RULES:
+- Keep an opportunity only when it has at least one specific complaint source AND one buying signal.
+- A buying signal can be explicit willingness to pay, repeated paid freelance gigs, an existing paid but disliked tool, or a costly manual business workflow.
+- Prioritize spreadsheets, copy-paste work, repetitive admin, and tasks outsourced to freelancers.
+- Record only engagement numbers visible in a source; otherwise use "not verified".
+- If a platform has no usable evidence, omit it. Do not manufacture platform coverage.
 
 Return ONLY a JSON array. Each item:
 {
   "hypothesis": "concise problem statement",
   "audience": "specific who",
   "app_type": "what the tool does",
-  "monetization": "pricing model that fits",
-  "evidence_found": true,
+  "current_workaround": "spreadsheet, manual workflow, freelancer, or existing paid tool used today",
+  "buying_signal": "specific evidence that money or costly labor is already involved",
+  "estimated_wtp": "evidence-based price or range, with reasoning",
   "evidence": [
     {
       "platform": "Reddit",
-      "community": "r/freelance",
-      "post_title": "representative post type",
-      "url": "https://reddit.com/r/freelance",
-      "engagement": "typical: 80-150 comments on this topic",
-      "key_observation": "what the audience actually asks for or complains about"
+      "source_type": "complaint|payment|paid_workaround",
+      "title": "real page title",
+      "url": "specific source URL",
+      "pain_in_buyers_words": "short exact quote or faithful paraphrase",
+      "engagement": "visible engagement or not verified",
+      "payment_signal": "what this source proves about willingness to pay"
     }
-  ],
-  "no_evidence_note": ""
+  ]
 }`;
 
   return { system, prompt };
@@ -256,11 +317,11 @@ function buildStage2(
 ): { system: string; prompt: string } {
   const has = Object.values(profile).some((v) => v?.trim());
   const founderCtx = has
-    ? `niche=${profile.niche || "?"}, audience=${profile.audience || "?"}, skill=${profile.skill_level || "beginner"}, time=${profile.time_per_week || "5-10h"}`
+    ? `capabilities=${profile.build_capabilities || profile.expertise || "?"}, niche/audience=${profile.niche_audience || profile.audience || profile.niche || "?"}, price=${profile.price_range || "?"}, ship_time=${profile.ship_time || profile.time_per_week || "?"}, customer_type=${profile.customer_type || "?"}`
     : "no profile — score fit neutrally";
 
   const system =
-    `You are a micro-SaaS strategist who turns raw market research into ranked, commercially honest idea cards for solo founders. You output valid JSON arrays only.`;
+    `You are a commercially skeptical app strategist. Turn grounded research into a short ranked list of app ideas. Use only the supplied research and verified source list. Never add a source, quote, number, or demand claim that is absent from the research packet. Output valid JSON arrays only.`;
 
   const prompt =
     `FOUNDER CONTEXT: ${founderCtx}
@@ -268,36 +329,49 @@ function buildStage2(
 STAGE 1 RESEARCH — hypotheses with community evidence:
 ${stage1Output}
 
+FILTER BEFORE SCORING:
+- Drop any idea without both a concrete complaint and a concrete buying signal.
+- Drop generic or saturated ideas unless the research proves a narrow underserved angle.
+- Prefer spreadsheet, manual, and freelancer workarounds.
+- It is acceptable to return fewer than 5 ideas. Do not fill gaps with assumptions.
+- Every source_links URL must be copied verbatim from VERIFIED GOOGLE SEARCH SOURCES in the research packet. Never construct or rewrite a URL.
+
 SCORING DIMENSIONS (each 1–10):
 - pain: urgency — many complaints, workarounds, repeated questions = high
-- willingness_to_pay: price mentions, existing paid tools, "worth it" signals = high
+- willingness_to_pay: explicit price mentions, paid gigs, existing paid tools, or expensive labor = high
 - simplicity: solo dev ships useful MVP in under a week? fewer integrations = higher
 - retention: recurring return? data lock-in, workflow dependency, habit = high
 - fit: how well does this match the founder profile, skills, and audience?
 
+BUYING LIKELIHOOD (1–10) is the commercial ranking score. Weight evidence of actual spending and painful recurring work more heavily than novelty. Sort descending by buying_likelihood.
+
 EVIDENCE STRENGTH RULES:
-- Strong: 3+ real community sources with meaningful engagement, recurring pain pattern clear
-- Medium: 1–2 real sources, OR strong reasoning with some evidence
-- Weak: evidence_found=false OR only 1 low-engagement source — still include, tag Weak
+- Strong: multiple specific sources, including a clear complaint and clear payment evidence
+- Medium: at least one specific complaint source plus one credible payment or paid-workaround signal
+- Weak: missing or ambiguous buying evidence — omit these ideas from the final output
 
-For ideas where evidence_found=false: fill evidence_summary from hypothesis reasoning; set source_links to []; set evidence_strength to "Weak".
-
-Return ONLY a JSON array sorted Strong first, Medium second, Weak last. Each card:
+Return ONLY a JSON array sorted by buying_likelihood descending. Each card:
 {
   "name": "App Name (2–5 marketable words)",
-  "evidence_strength": "Strong|Medium|Weak",
+  "evidence_strength": "Strong|Medium",
+  "buying_likelihood": 0,
   "target_audience": "specific description of who",
-  "core_problem": "the exact pain in 1–2 sentences",
-  "evidence_summary": "what real people said or complained about — cite community names (2–3 sentences)",
+  "buyer": "the exact role or person who controls the budget",
+  "core_problem": "the painful recurring job in 1–2 sentences",
+  "pain_in_buyers_words": "short quote or faithful paraphrase from a real source",
+  "evidence_summary": "what the verified sources collectively demonstrate",
   "source_links": [
     { "url": "...", "title": "...", "platform": "...", "engagement": "..." }
   ],
   "strongest_signal": "the single most compelling data point found",
+  "current_workaround": "how buyers solve it today, emphasizing spreadsheets, manual work, or freelancers",
+  "payment_proof": "specific proof they already spend money, labor, or costly time on it",
+  "estimated_willingness_to_pay": "price or range and evidence-based rationale",
   "why_fits_user": "why this idea suits the founder profile, skills, and audience",
   "usage_frequency": "daily|weekly|monthly",
   "why_people_keep_paying": "what creates lock-in or recurring value",
-  "fast_mvp": "smallest useful version that proves the concept — what IN, what OUT",
-  "unique_angle": "how this stands out from existing tools or approaches",
+  "fast_mvp": "smallest realistic version buildable within the user's shipping timeframe — clearly state what is IN and OUT",
+  "unique_angle": "one clear evidence-led difference from existing tools",
   "churn_risk": "main reason users might leave and how to prevent it",
   "validation_test": "fastest way to validate demand before building anything",
   "scores": {

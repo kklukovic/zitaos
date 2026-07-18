@@ -20,7 +20,7 @@ export const Route = createFileRoute("/_authenticated/project/$id")({
 
 type Status = "profile" | "discover" | "score" | "blueprint" | "launch" | "completed";
 const STEPS: { key: Status; label: string; icon: any; desc: string }[] = [
-  { key: "profile", label: "Profile", icon: Target, desc: "Tell ZITA about you and your audience." },
+  { key: "profile", label: "Brief", icon: Target, desc: "Set your skills, audience, price, and shipping constraints." },
   { key: "discover", label: "Discover", icon: Sparkles, desc: "Find real, painful problems worth solving." },
   { key: "score", label: "Score", icon: Zap, desc: "Rank ideas across 6 dimensions." },
   { key: "blueprint", label: "Blueprint", icon: FileCode, desc: "Generate the build spec for your tool." },
@@ -164,29 +164,22 @@ function StepBar({ active, reached, status, onPick }: { active: Status; reached:
   );
 }
 
-// ---------- Step 1: Profile (fully functional) ----------
-const NICHES = ["Make Money Online", "Health & Fitness", "Weight Loss", "Productivity", "Relationships", "Creators & Content", "Local Business", "Affiliate Marketing"];
-const TOOL_TYPES = ["Lead magnet", "Paid mini-tool", "Client tool", "Internal business tool", "Not sure yet"];
-const SKILLS = ["Beginner", "Intermediate", "Advanced"];
-const TIMES = ["Under 5h", "5-10h", "10-20h", "20+h"];
+// ---------- Step 1: Research brief ----------
+const PRICE_RANGES = ["€50 one-time", "€500 build", "€100/month"];
+const SHIP_TIMES = ["A few days", "1 week", "2–4 weeks"];
+const CUSTOMER_TYPES = ["B2B", "B2C", "Creators / solopreneurs"];
 
 function ProfilePanel({ project, onSaved }: { project: any; onSaved: (next: Status) => void }) {
   const existing = (project.profile_data ?? {}) as Record<string, string>;
   const [form, setForm] = useState({
-    niche: existing.niche ?? "",
-    expertise: existing.expertise ?? "",
-    audience: existing.audience ?? "",
-    offer: existing.offer ?? "",
-    topic: existing.topic ?? "",
-    tool_type: existing.tool_type ?? "Not sure yet",
-    skill_level: existing.skill_level ?? "Beginner",
-    // normalise legacy "<5h" value to the new label
-    time_per_week: (existing.time_per_week === "<5h" ? "Under 5h" : existing.time_per_week) || "5-10h",
+    build_capabilities: existing.build_capabilities ?? existing.expertise ?? "",
+    niche_audience: existing.niche_audience ?? existing.audience ?? existing.niche ?? "",
+    price_range: existing.price_range ?? "",
+    ship_time: existing.ship_time ?? "",
+    customer_type: existing.customer_type ?? "",
   });
   const [saving, setSaving] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(
-    !!(existing.expertise || existing.audience || existing.offer || existing.topic),
-  );
+  const complete = Object.values(form).every((value) => value.trim().length > 0);
 
   const persist = async () => {
     setSaving(true);
@@ -201,96 +194,72 @@ function ProfilePanel({ project, onSaved }: { project: any; onSaved: (next: Stat
   };
 
   const handleSave = async () => {
+    if (!complete) {
+      toast.error("Please answer all five questions before continuing.");
+      return;
+    }
     if (await persist()) {
-      toast.success("Profile saved — Discover unlocked");
+      toast.success("Research brief saved — Discover unlocked");
       onSaved("discover");
     }
-  };
-
-  const handleSkip = async () => {
-    if (await persist()) onSaved("discover");
   };
 
   return (
     <div className="space-y-6 rounded-xl border border-border bg-card p-6 shadow-card">
       <div>
-        <h2 className="text-lg font-semibold">Step 1 — Your Profile</h2>
+        <h2 className="text-lg font-semibold">Step 1 — Your Research Brief</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          ZITA uses this to tailor every idea to you. Fill what you know — nothing is required.
+          Answer these five questions first. ZITA will use them to research products people are already asking and paying for.
         </p>
       </div>
 
-      {/* Niche picker */}
-      <div className="space-y-2">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Pick a niche</Label>
-        <div className="flex flex-wrap gap-2">
-          {NICHES.map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setForm({ ...form, niche: form.niche === n ? "" : n })}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-sm transition",
-                form.niche === n
-                  ? "border-primary bg-primary/15 text-primary"
-                  : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground",
-              )}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-        <Input
-          value={NICHES.includes(form.niche) ? "" : form.niche}
-          onChange={(e) => setForm({ ...form, niche: e.target.value })}
-          placeholder="Or type your own niche…"
-          className="mt-1"
+      <Field label="1. What skills or tools can you build with?">
+        <Textarea
+          rows={3}
+          value={form.build_capabilities}
+          onChange={(e) => setForm({ ...form, build_capabilities: e.target.value })}
+          placeholder="e.g. AI tools, automations, web apps, no-code"
         />
-      </div>
+      </Field>
 
-      <RadioGroup label="Preferred tool type" value={form.tool_type} options={TOOL_TYPES} onChange={(v) => setForm({ ...form, tool_type: v })} />
-      <RadioGroup label="Your build skill level" value={form.skill_level} options={SKILLS} onChange={(v) => setForm({ ...form, skill_level: v })} />
-      <RadioGroup label="Time available per week" value={form.time_per_week} options={TIMES} onChange={(v) => setForm({ ...form, time_per_week: v })} />
+      <Field label="2. Which niche or audience do you know best or want to serve?">
+        <Textarea
+          rows={3}
+          value={form.niche_audience}
+          onChange={(e) => setForm({ ...form, niche_audience: e.target.value })}
+          placeholder="e.g. independent accountants, fitness coaches, Etsy sellers"
+        />
+      </Field>
 
-      {/* Collapsible optional detail */}
-      <div className="overflow-hidden rounded-lg border border-border">
-        <button
-          type="button"
-          onClick={() => setMoreOpen(!moreOpen)}
-          className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium transition hover:bg-accent/30"
-        >
-          <span>
-            Tell ZITA more{" "}
-            <span className="font-normal text-muted-foreground">(optional)</span>
-          </span>
-          <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", moreOpen && "rotate-180")} />
-        </button>
-        {moreOpen && (
-          <div className="space-y-4 border-t border-border px-4 py-4">
-            <Field label="What do you do?">
-              <Textarea rows={2} value={form.expertise} onChange={(e) => setForm({ ...form, expertise: e.target.value })} placeholder="Your expertise / background" />
-            </Field>
-            <Field label="Who do you help?">
-              <Input value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value })} placeholder="Target audience" />
-            </Field>
-            <Field label="What do you sell or want to sell?">
-              <Textarea rows={2} value={form.offer} onChange={(e) => setForm({ ...form, offer: e.target.value })} placeholder="Your current or planned offer" />
-            </Field>
-            <Field label="Problem area or niche of interest">
-              <Input value={form.topic} onChange={(e) => setForm({ ...form, topic: e.target.value })} placeholder="e.g. freelancers, e-commerce, productivity…" />
-            </Field>
-          </div>
-        )}
-      </div>
+      <ChoiceWithCustomInput
+        label="3. What price range do you want to sell at?"
+        value={form.price_range}
+        options={PRICE_RANGES}
+        placeholder="Or enter your own price / range…"
+        onChange={(value) => setForm({ ...form, price_range: value })}
+      />
+
+      <ChoiceWithCustomInput
+        label="4. How fast do you need to ship?"
+        value={form.ship_time}
+        options={SHIP_TIMES}
+        placeholder="Or enter your timeframe…"
+        onChange={(value) => setForm({ ...form, ship_time: value })}
+      />
+
+      <RadioGroup
+        label="5. Do you want B2B, B2C, or creators / solopreneurs?"
+        value={form.customer_type}
+        options={CUSTOMER_TYPES}
+        onChange={(value) => setForm({ ...form, customer_type: value })}
+      />
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={handleSave} disabled={saving} className="bg-gradient-electric text-primary-foreground shadow-glow">
+        <Button onClick={handleSave} disabled={saving || !complete} className="bg-gradient-electric text-primary-foreground shadow-glow">
           {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-          Save & Continue <ArrowRight className="h-4 w-4" />
+          Save answers & Continue <ArrowRight className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" onClick={handleSkip} disabled={saving} className="text-muted-foreground hover:text-foreground">
-          Skip to ideas
-        </Button>
+        {!complete && <span className="text-xs text-muted-foreground">All five answers are required.</span>}
       </div>
     </div>
   );
@@ -330,6 +299,32 @@ function RadioGroup({ label, value, options, onChange }: { label: string; value:
   );
 }
 
+function ChoiceWithCustomInput({
+  label,
+  value,
+  options,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  const isPreset = options.includes(value);
+  return (
+    <div className="space-y-2">
+      <RadioGroup label={label} value={value} options={options} onChange={onChange} />
+      <Input
+        value={isPreset ? "" : value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
 // ---------- Step 2: Discover ----------
 
 type DiscoverMode = "personalized" | "surprise" | "validate";
@@ -353,11 +348,11 @@ const DISCOVER_MODES: { key: DiscoverMode; title: string; desc: string }[] = [
 ];
 
 const LOADING_STEPS = [
-  "Generating idea hypotheses...",
-  "Searching real discussions...",
-  "Reading what people actually want...",
-  "Scoring the evidence...",
-  "Building your idea cards...",
+  "Searching Reddit and Indie Hackers complaints...",
+  "Checking X posts for repeated pain...",
+  "Finding paid manual work on Upwork and Fiverr...",
+  "Verifying sources and buying signals...",
+  "Ranking ideas by likelihood to pay...",
 ];
 
 type SourceLink = { url: string; title: string; platform: string; engagement?: string };
@@ -365,11 +360,17 @@ type SourceLink = { url: string; title: string; platform: string; engagement?: s
 type ResearchedIdea = {
   name: string;
   evidence_strength: "Strong" | "Medium" | "Weak";
+  buying_likelihood?: number;
   target_audience: string;
+  buyer?: string;
   core_problem: string;
+  pain_in_buyers_words?: string;
   evidence_summary: string;
   source_links: SourceLink[];
   strongest_signal: string;
+  current_workaround?: string;
+  payment_proof?: string;
+  estimated_willingness_to_pay?: string;
   why_fits_user: string;
   usage_frequency: string;
   why_people_keep_paying: string;
@@ -501,7 +502,7 @@ function DiscoverPanel({ project, onSaved }: { project: any; onSaved: (next: Sta
         <div>
           <h2 className="text-lg font-semibold">Step 2 — Discover Ideas</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            AI researches real online discussions to find ideas with evidence behind them.
+            Live web research finds real complaints, paid workarounds, and verifiable buying signals.
           </p>
         </div>
         {ideas && !running && (
@@ -703,6 +704,11 @@ function ResearchIdeaCard({
                 {total}/50
               </span>
             )}
+            {typeof idea.buying_likelihood === "number" && (
+              <span className="rounded-md border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-xs font-semibold text-green-500">
+                {idea.buying_likelihood}/10 buy likelihood
+              </span>
+            )}
             <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
               {idea.usage_frequency}
             </span>
@@ -734,6 +740,7 @@ function ResearchIdeaCard({
 
       {expanded && (
         <div className="space-y-4 border-t border-border px-4 py-4 text-sm">
+          {idea.pain_in_buyers_words && <IdeaDetail label="Pain in the buyer's words" value={idea.pain_in_buyers_words} />}
           <IdeaDetail label="Evidence summary" value={idea.evidence_summary} />
 
           {idea.source_links && idea.source_links.length > 0 && (
@@ -763,6 +770,14 @@ function ResearchIdeaCard({
           )}
 
           <IdeaDetail label="Strongest signal" value={idea.strongest_signal} />
+          {idea.current_workaround && <IdeaDetail label="How they solve it today" value={idea.current_workaround} />}
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {idea.payment_proof && <IdeaDetail label="Proof people already pay" value={idea.payment_proof} />}
+            {idea.estimated_willingness_to_pay && <IdeaDetail label="Estimated willingness to pay" value={idea.estimated_willingness_to_pay} />}
+          </div>
+
+          {idea.buyer && <IdeaDetail label="Exact buyer" value={idea.buyer} />}
           <IdeaDetail label="Why this fits you" value={idea.why_fits_user} />
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -865,7 +880,11 @@ function ScorePanel({ project, onSaved }: { project: any; onSaved: (next: Status
     (i) => i && typeof i?.evidence_strength === "string",
   ) as ResearchedIdea[];
 
-  const ranked = [...ideas].sort((a, b) => totalScore(b.scores) - totalScore(a.scores));
+  const ranked = [...ideas].sort(
+    (a, b) =>
+      (b.buying_likelihood ?? 0) - (a.buying_likelihood ?? 0) ||
+      totalScore(b.scores) - totalScore(a.scores),
+  );
 
   const existingChosen = (project.chosen_idea as { name: string } | null)?.name ?? null;
   const [chosen, setChosen] = useState<string | null>(existingChosen);
@@ -894,7 +913,7 @@ function ScorePanel({ project, onSaved }: { project: any; onSaved: (next: Status
       <div>
         <h2 className="text-lg font-semibold">Step 3 — Score & Rank</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Ideas ranked by total score across pain, willingness to pay, simplicity, retention, and fit (max 50). Pick the one you'll build.
+          Ideas are ranked by buying likelihood, with pain, willingness to pay, simplicity, retention, and fit as supporting scores.
         </p>
       </div>
 

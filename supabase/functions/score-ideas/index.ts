@@ -83,7 +83,7 @@ Deno.serve(async (req: Request) => {
     const prompt =
       `You are evaluating digital tool ideas for a solo founder.
 IDEAS: ${JSON.stringify(project.ideas)}
-CONTEXT: skill level ${profile.skill_level}, time available ${profile.time_per_week}, audience ${profile.audience}.
+CONTEXT: build capabilities ${profile.build_capabilities || profile.expertise}, shipping timeframe ${profile.ship_time || profile.time_per_week}, niche/audience ${profile.niche_audience || profile.audience || profile.niche}, target price ${profile.price_range}, customer type ${profile.customer_type}.
 Score each idea 1-10 on: pain_level, build_ease (given their skill+time), monetization_potential, content_potential, conversation_potential, founder_offer_potential.
 Return ONLY a JSON array sorted by total descending, each: { name, scores: {pain_level, build_ease, monetization_potential, content_potential, conversation_potential, founder_offer_potential}, total (sum), verdict (max 12 words), rank (number) }. No prose outside JSON.`;
 

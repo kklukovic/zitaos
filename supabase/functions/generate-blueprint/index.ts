@@ -68,7 +68,7 @@ Deno.serve(async (req: Request) => {
     const prompt =
       `You are a senior product manager writing a build-ready blueprint for a solo founder using AI builders (Lovable, Codex).
 CHOSEN IDEA: ${JSON.stringify(idea)}
-CONTEXT: skill level ${profile.skill_level}, stack Lovable + Supabase, time ${profile.time_per_week}.
+CONTEXT: build capabilities ${profile.build_capabilities || profile.expertise}, shipping timeframe ${profile.ship_time || profile.time_per_week}, target price ${profile.price_range}, customer type ${profile.customer_type}.
 Output Markdown with these exact sections:
 # Tool Name
 ## One-Sentence Promise
