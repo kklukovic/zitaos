@@ -39,49 +39,50 @@ function Dashboard() {
   const refreshProjects = () => qc.invalidateQueries({ queryKey: ["projects"] });
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
+    <div className="mx-auto max-w-6xl px-6 py-10 md:px-10 md:py-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="text-xs uppercase tracking-widest text-primary">Welcome back</div>
-          <h1 className="mt-1 text-3xl font-bold">Hi, {profile?.full_name || "founder"}.</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Let ZITA help you find your next app idea.</p>
+          <div className="scene-chip mb-3"><Sparkles className="h-3 w-3" /> Welcome back</div>
+          <h1 className="step-title">
+            Hi, <span className="text-gradient-heading">{profile?.full_name?.split(" ")[0] || "founder"}</span>.
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">Let ZITA help you find and ship your next app idea.</p>
         </div>
-        <Button asChild size="lg" className="bg-gradient-electric text-primary-foreground shadow-glow hover:opacity-90">
+        <Button asChild size="lg" className="h-12 rounded-xl bg-gradient-electric px-5 text-primary-foreground shadow-glow hover:opacity-95">
           <Link to="/projects/new"><Plus className="h-4 w-4" />Start new project</Link>
         </Button>
       </div>
 
-      <div className="mt-8 grid gap-4 md:grid-cols-3">
+      <div className="mt-10 grid gap-5 md:grid-cols-3">
         <StatCard label="Credits" value={String(profile?.credits ?? 0)} hint={`Founder tier — ${profile?.founder_tier ?? "founder_47"}`} />
         <StatCard label="Projects" value={String(projects?.length ?? 0)} hint="Recent activity" />
         <StatCard label="Cost per project" value={`~${PROJECT_TOTAL_CREDITS} cr`} hint={COST_HINT} />
       </div>
 
-      <div className="mt-10">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Recent projects</h2>
-          <Link to="/projects" className="text-sm text-primary hover:underline">View all <ArrowRight className="inline h-3 w-3" /></Link>
+      <div className="mt-12">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-xl font-bold tracking-tight">Recent projects</h2>
+          <Link to="/projects" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">View all <ArrowRight className="h-3.5 w-3.5" /></Link>
         </div>
         {projects && projects.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2">
             {projects.map((p) => {
               const m = statusMeta[p.status] ?? statusMeta.profile;
               return (
-                <div key={p.id} className="group relative rounded-xl border border-border bg-card p-5 shadow-card transition-colors hover:border-primary/50">
-                  <div className="flex items-start justify-between">
-                    <div className="min-w-0 flex-1 pr-3">
+                <div key={p.id} className="card-premium group relative p-6 transition-transform hover:-translate-y-0.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
                       <InlineProjectName project={p} onRenamed={refreshProjects} />
-                      <div className="mt-1 text-xs text-muted-foreground">Updated {new Date(p.updated_at).toLocaleDateString()}</div>
+                      <div className="mt-1.5 text-xs text-muted-foreground">Updated {new Date(p.updated_at).toLocaleDateString()}</div>
                     </div>
-                    <div className={cn("flex shrink-0 items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-xs", m.tone)}>
+                    <div className={cn("relative z-10 flex shrink-0 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-medium", m.tone)}>
                       <m.icon className="h-3 w-3" />{m.label}
                     </div>
                   </div>
-                  {/* Full-card link sits behind the name editor */}
                   <Link
                     to="/project/$id"
                     params={{ id: p.id }}
-                    className="absolute inset-0 rounded-xl"
+                    className="absolute inset-0 rounded-[1.25rem]"
                     aria-label={`Open project ${p.name}`}
                   />
                 </div>
@@ -89,10 +90,13 @@ function Dashboard() {
             })}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-border bg-card/30 p-10 text-center">
-            <Sparkles className="mx-auto h-8 w-8 text-primary" />
-            <p className="mt-3 text-sm text-muted-foreground">No projects yet. ZITA is ready when you are.</p>
-            <Button asChild className="mt-4 bg-gradient-electric text-primary-foreground shadow-glow">
+          <div className="card-premium p-12 text-center">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-gradient-electric shadow-glow">
+              <Sparkles className="h-6 w-6 text-primary-foreground" />
+            </div>
+            <p className="mt-4 text-base font-semibold">No projects yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">ZITA is ready when you are.</p>
+            <Button asChild className="mt-5 rounded-xl bg-gradient-electric text-primary-foreground shadow-glow">
               <Link to="/projects/new"><Plus className="h-4 w-4" />Start your first project</Link>
             </Button>
           </div>
