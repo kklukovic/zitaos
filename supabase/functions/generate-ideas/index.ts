@@ -478,7 +478,7 @@ HARD PROFILE GATES — APPLY BEFORE COMMERCIAL SCORING:
 - Drop any idea that does not match the selected customer type and its payment context (B2B, B2C, or creators/solopreneurs).
 - Drop any idea whose smallest useful MVP cannot deliver its core value within the selected shipping timeframe. Judge required integrations, data acquisition, compliance, operations, network effects, and workflow breadth honestly.
 - Drop any idea that would remain essentially unchanged if the stated audience were replaced by any unrelated audience. Niche labels pasted onto generic products do not count as profile fit; rewrite the core function around the niche workflow or reject it.
-- Drop any idea with a profile fit score below 7/10 or a shipping-timeframe simplicity score below 7/10.
+- Prefer ideas with a profile fit score of at least 5/10 and a shipping-timeframe simplicity score of at least 5/10. Ideas below 5 on either dimension are penalized in ranking but may still appear if they are the best available.
 
 EVIDENCE AND SPECIFICITY GATES:
 - Drop any idea without a grounded complaint and at least a real, though potentially limited, buying signal from the grounded research.
