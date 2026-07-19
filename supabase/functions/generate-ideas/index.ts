@@ -88,16 +88,14 @@ Deno.serve(async (req: Request) => {
         return fail("Research stage returned no content — try again.", 502);
       }
 
-      if (!s1Result.groundingSources?.length) {
-        await refund();
-        return fail("Research found no verifiable web sources — try a more specific niche.", 502);
-      }
+      const groundingCount = s1Result.groundingSources?.length ?? 0;
+      console.log(`[generate-ideas] FILTER_FUNNEL stage1_grounding_sources=${groundingCount}`);
 
-      for (const source of s1Result.groundingSources) verifiedSourceUrls.add(source.url);
+      for (const source of s1Result.groundingSources ?? []) verifiedSourceUrls.add(source.url);
 
-      const groundedSourceList = s1Result.groundingSources
+      const groundedSourceList = (s1Result.groundingSources ?? [])
         .map((source, index) => `${index + 1}. ${source.title} — ${source.url}`)
-        .join("\n");
+        .join("\n") || "(no verified Google Search sources returned — rely on cited pages inside ideas but flag weak evidence)";
       const groundedResearch = `${s1Result.text}\n\nVERIFIED GOOGLE SEARCH SOURCES:\n${groundedSourceList}`;
 
       // ── STAGE 2: Scoring + card generation ───────────────────────────────────
@@ -168,56 +166,96 @@ Deno.serve(async (req: Request) => {
     const isRecord = (value: unknown): value is IdeaRecord =>
       Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-    const verifiedIdeas = ideas
-      .filter(isRecord)
-      .map((idea) => {
-        const sourceLinks = Array.isArray(idea.source_links)
-          ? idea.source_links.filter(
-              (source): source is IdeaRecord =>
-                isRecord(source) &&
-                typeof source.url === "string" &&
-                verifiedSourceUrls.has(source.url),
-            )
-          : [];
-        const buyingLikelihood = Math.max(1, Math.min(10, Math.round(Number(idea.buying_likelihood) || 1)));
-        const buyingSignal = typeof idea.buying_signal === "string"
-          ? idea.buying_signal.trim()
-          : typeof idea.payment_proof === "string"
-          ? idea.payment_proof.trim()
-          : "";
-        return {
-          ...idea,
-          source_links: sourceLinks,
-          buying_likelihood: buyingLikelihood,
-          buying_signal: buyingSignal,
-        };
-      })
-      .filter(
-        (idea) =>
-          idea.source_links.length > 0 &&
-          typeof idea.buying_signal === "string" &&
-          idea.buying_signal.trim().length > 0,
-      );
+    const rawIdeaCount = ideas.length;
+    const hasGrounding = verifiedSourceUrls.size > 0;
 
-    if (verifiedIdeas.length === 0) {
+    // Normalize each idea; fail-soft source verification.
+    // - If Gemini returned grounding sources, accept idea as verified when it lists any source_links
+    //   (Gemini returns redirect URLs so exact URL matching is unreliable).
+    // - If no grounding sources at all, keep the idea if it has any source_links or a buying signal.
+    const normalized = ideas.filter(isRecord).map((idea) => {
+      const rawSourceLinks = Array.isArray(idea.source_links)
+        ? idea.source_links.filter(isRecord)
+        : [];
+      const buyingLikelihood = Math.max(1, Math.min(10, Math.round(Number(idea.buying_likelihood) || 1)));
+      const buyingSignal = typeof idea.buying_signal === "string"
+        ? idea.buying_signal.trim()
+        : typeof idea.payment_proof === "string"
+        ? idea.payment_proof.trim()
+        : "";
+      const scores = isRecord(idea.scores) ? idea.scores : {};
+      const fitScore = Number(scores.fit) || 0;
+      const simplicityScore = Number(scores.simplicity) || 0;
+      const hasAnySource = rawSourceLinks.length > 0;
+      const verified = hasGrounding ? hasAnySource : (hasAnySource || buyingSignal.length > 0);
+      return {
+        ...idea,
+        source_links: rawSourceLinks,
+        buying_likelihood: buyingLikelihood,
+        buying_signal: buyingSignal,
+        _verified: verified,
+        _fit: fitScore,
+        _simplicity: simplicityScore,
+      };
+    });
+
+    const sourceVerified = normalized.filter((i) => i._verified);
+
+    // Soft profile-fit / shipping penalty (previously a hard 7/10 reject).
+    // Anything at/above 5 keeps full score; below 5 pays a proportional ranking penalty.
+    const withPenalty = sourceVerified.map((idea) => {
+      const fitPenalty = idea._fit > 0 && idea._fit < 5 ? (5 - idea._fit) : 0;
+      const shipPenalty = idea._simplicity > 0 && idea._simplicity < 5 ? (5 - idea._simplicity) : 0;
+      const rankScore = idea.buying_likelihood - fitPenalty - shipPenalty;
+      return { ...idea, _rankScore: rankScore };
+    });
+
+    const passing = withPenalty.filter((i) => i._fit >= 5 && i._simplicity >= 5);
+
+    console.log(
+      `[generate-ideas] FILTER_FUNNEL raw=${rawIdeaCount} source_verified=${sourceVerified.length} passing_fit_ship=${passing.length} grounding=${hasGrounding}`,
+    );
+
+    if (rawIdeaCount === 0) {
       await refund();
-      return fail("No ideas passed the verified demand and payment-evidence checks.", 502);
+      return fail("Model returned no ideas — try again.", 502);
     }
 
-    // Rank by buying likelihood first, then evidence strength and WTP score.
     const evidenceOrder: Record<string, number> = { Strong: 0, Medium: 1, Weak: 2 };
-    verifiedIdeas.sort((a, b) => {
-      const aScores = isRecord(a.scores) ? a.scores : {};
-      const bScores = isRecord(b.scores) ? b.scores : {};
-      return (
-        b.buying_likelihood - a.buying_likelihood ||
-        (evidenceOrder[String(a.evidence_strength)] ?? 1) -
-          (evidenceOrder[String(b.evidence_strength)] ?? 1) ||
-        (Number(bScores.willingness_to_pay) || 0) -
-          (Number(aScores.willingness_to_pay) || 0)
-      );
+    const sortIdeas = <T extends { _rankScore?: number; buying_likelihood: number; evidence_strength?: unknown; scores?: unknown }>(arr: T[]) =>
+      [...arr].sort((a, b) => {
+        const aScores = isRecord(a.scores) ? a.scores : {};
+        const bScores = isRecord(b.scores) ? b.scores : {};
+        return (
+          (b._rankScore ?? b.buying_likelihood) - (a._rankScore ?? a.buying_likelihood) ||
+          (evidenceOrder[String(a.evidence_strength)] ?? 1) -
+            (evidenceOrder[String(b.evidence_strength)] ?? 1) ||
+          (Number(bScores.willingness_to_pay) || 0) -
+            (Number(aScores.willingness_to_pay) || 0)
+        );
+      });
+
+    let finalIdeas: IdeaRecord[];
+    let weakEvidence = false;
+
+    if (passing.length >= 3) {
+      finalIdeas = sortIdeas(passing);
+    } else {
+      // Fallback: return top-ranked ideas (up to 6) with weak_evidence flag.
+      weakEvidence = true;
+      const pool = sourceVerified.length > 0 ? sourceVerified : withPenalty.length > 0 ? withPenalty : normalized.map((i) => ({ ...i, _rankScore: i.buying_likelihood }));
+      finalIdeas = sortIdeas(pool as typeof withPenalty).slice(0, 6);
+    }
+
+    // Strip internal fields; tag weak_evidence when applicable.
+    ideas = finalIdeas.map((idea) => {
+      const { _verified, _fit, _simplicity, _rankScore, ...clean } = idea as IdeaRecord & {
+        _verified?: boolean; _fit?: number; _simplicity?: number; _rankScore?: number;
+      };
+      return { ...clean, weak_evidence: weakEvidence };
     });
-    ideas = verifiedIdeas;
+
+    console.log(`[generate-ideas] FILTER_FUNNEL returned=${ideas.length} weak_evidence=${weakEvidence}`);
 
     // Audit log (service role bypasses RLS — user inserts are blocked by policy)
     await admin.from("credit_usage").insert({
@@ -440,7 +478,7 @@ HARD PROFILE GATES — APPLY BEFORE COMMERCIAL SCORING:
 - Drop any idea that does not match the selected customer type and its payment context (B2B, B2C, or creators/solopreneurs).
 - Drop any idea whose smallest useful MVP cannot deliver its core value within the selected shipping timeframe. Judge required integrations, data acquisition, compliance, operations, network effects, and workflow breadth honestly.
 - Drop any idea that would remain essentially unchanged if the stated audience were replaced by any unrelated audience. Niche labels pasted onto generic products do not count as profile fit; rewrite the core function around the niche workflow or reject it.
-- Drop any idea with a profile fit score below 7/10 or a shipping-timeframe simplicity score below 7/10.
+- Prefer ideas with a profile fit score of at least 5/10 and a shipping-timeframe simplicity score of at least 5/10. Ideas below 5 on either dimension are penalized in ranking but may still appear if they are the best available.
 
 EVIDENCE AND SPECIFICITY GATES:
 - Drop any idea without a grounded complaint and at least a real, though potentially limited, buying signal from the grounded research.
