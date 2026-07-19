@@ -255,6 +255,44 @@ function clampProfile(raw: unknown): Record<string, string> {
   return out;
 }
 
+// Salvage truncated JSON by walking the string, tracking string/escape/depth
+// state, and remembering the last position where the top-level container had
+// a complete item. On truncation we cut at that boundary and close the
+// outer array or object.
+function repairTruncatedJson(input: string, opener: "[" | "{"): string | null {
+  let inString = false;
+  let escape = false;
+  let depth = 0;
+  let lastGoodEnd = -1; // index (exclusive) after the last complete top-level item
+
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i];
+    if (escape) { escape = false; continue; }
+    if (c === "\\") { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+
+    if (c === "{" || c === "[") depth++;
+    else if (c === "}" || c === "]") {
+      depth--;
+      if (depth === 1) {
+        // Just closed a top-level item inside the outer container.
+        lastGoodEnd = i + 1;
+      } else if (depth === 0) {
+        // Outer container closed cleanly — no repair needed.
+        return input.slice(0, i + 1);
+      }
+    }
+  }
+
+  if (lastGoodEnd <= 0) return null;
+  const head = input.slice(0, lastGoodEnd);
+  // Strip any trailing comma/whitespace after the last complete item, then close.
+  const trimmed = head.replace(/[\s,]*$/, "");
+  return opener === "[" ? `[${trimmed.slice(1)}]` : `{${trimmed.slice(1)}}`;
+}
+
+
 function profileStr(profile: Record<string, string>): string {
   const has = Object.values(profile).some((v) => v?.trim());
   if (!has) return "No user profile provided — generate ideas broadly.";
