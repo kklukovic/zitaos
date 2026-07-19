@@ -88,16 +88,14 @@ Deno.serve(async (req: Request) => {
         return fail("Research stage returned no content — try again.", 502);
       }
 
-      if (!s1Result.groundingSources?.length) {
-        await refund();
-        return fail("Research found no verifiable web sources — try a more specific niche.", 502);
-      }
+      const groundingCount = s1Result.groundingSources?.length ?? 0;
+      console.log(`[generate-ideas] FILTER_FUNNEL stage1_grounding_sources=${groundingCount}`);
 
-      for (const source of s1Result.groundingSources) verifiedSourceUrls.add(source.url);
+      for (const source of s1Result.groundingSources ?? []) verifiedSourceUrls.add(source.url);
 
-      const groundedSourceList = s1Result.groundingSources
+      const groundedSourceList = (s1Result.groundingSources ?? [])
         .map((source, index) => `${index + 1}. ${source.title} — ${source.url}`)
-        .join("\n");
+        .join("\n") || "(no verified Google Search sources returned — rely on cited pages inside ideas but flag weak evidence)";
       const groundedResearch = `${s1Result.text}\n\nVERIFIED GOOGLE SEARCH SOURCES:\n${groundedSourceList}`;
 
       // ── STAGE 2: Scoring + card generation ───────────────────────────────────
