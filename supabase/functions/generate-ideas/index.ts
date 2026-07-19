@@ -115,30 +115,42 @@ Deno.serve(async (req: Request) => {
       throw aiErr;
     }
 
-    // Parse JSON robustly — strip markdown fences and any preamble/trailing text
+    // Parse JSON robustly — strip markdown fences and any preamble/trailing text.
+    // On truncated output (e.g. Anthropic Haiku 4.5's 8192-token cap cutting off
+    // mid-object on large idea batches), salvage all complete top-level items.
     let ideas: unknown[];
     try {
       let raw = s2Result.text.trim();
 
-      // 1. Strip ```json ... ``` (or unlabelled) markdown fences if present.
       const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
       if (fenced) raw = fenced[1].trim();
 
-      // 2. Trim anything before the first { or [ and after the matching last } or ]
       const firstObj = raw.indexOf("{");
       const firstArr = raw.indexOf("[");
       const candidates = [firstObj, firstArr].filter((i) => i >= 0);
       if (candidates.length === 0) throw new Error("no JSON start token found");
       const start = Math.min(...candidates);
-      const opener = raw[start];
+      const opener = raw[start] as "[" | "{";
       const closer = opener === "[" ? "]" : "}";
       const end = raw.lastIndexOf(closer);
-      if (end <= start) throw new Error("no JSON end token found");
-      raw = raw.slice(start, end + 1);
+      const sliced = end > start ? raw.slice(start, end + 1) : raw.slice(start);
 
-      const parsed = JSON.parse(raw);
-      ideas = Array.isArray(parsed) ? parsed : parsed?.ideas;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(sliced);
+      } catch (_firstErr) {
+        const repaired = repairTruncatedJson(raw.slice(start), opener);
+        if (!repaired) throw _firstErr;
+        parsed = JSON.parse(repaired);
+        console.warn(
+          `[generate-ideas] recovered from truncated JSON (raw length ${s2Result.text.length}, provider ${s2Result.provider})`,
+        );
+      }
+      ideas = Array.isArray(parsed)
+        ? parsed
+        : (parsed as { ideas?: unknown[] })?.ideas ?? [];
       if (!Array.isArray(ideas)) throw new Error("not an array");
+      if (ideas.length === 0) throw new Error("empty ideas array");
     } catch (e) {
       console.error(
         "[generate-ideas] RAW_PARSE_FAIL:",
