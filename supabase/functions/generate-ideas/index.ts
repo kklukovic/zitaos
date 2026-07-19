@@ -289,7 +289,7 @@ function repairTruncatedJson(input: string, opener: "[" | "{"): string | null {
   const head = input.slice(0, lastGoodEnd);
   // Strip any trailing comma/whitespace after the last complete item, then close.
   const trimmed = head.replace(/[\s,]*$/, "");
-  return opener === "[" ? `[${trimmed.slice(1)}]` : `{${trimmed.slice(1)}}`;
+  return trimmed + (opener === "[" ? "]" : "}");
 }
 
 
